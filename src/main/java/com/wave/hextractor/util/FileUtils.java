@@ -13,7 +13,6 @@ import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.zip.CRC32;
 
@@ -355,6 +354,7 @@ public class FileUtils {
 		HexTable hexTable = new HexTable(firstFile);
 		String input = getAsciiFile(secondFile);
 		byte[] outFileBytes = Files.readAllBytes(Paths.get(thirdFile));
+		
 		String[] lines = input.split(Constants.S_NEWLINE);
 		int totalBytesWritten = 0;
 		int line = 0;
@@ -379,10 +379,16 @@ public class FileUtils {
 				// End line
 				content.append(lines[line]).append(Constants.S_NEWLINE);
 
-				// Process
+			// Process
 				byte[] hex = hexTable.toHex(content.toString(), entry);
 				if (Utils.isDebug()) {
 					Utils.log(" TO OFFSET: " + Utils.intToHexString(entry.getStart(), Constants.HEX_ADDR_SIZE));
+				}
+				// Validar que no sobrepasamos el límite del archivo
+				if (entry.getStart() + hex.length > outFileBytes.length) {
+					throw new IOException("ERROR: Insertion would exceed file bounds at offset " + 
+						Utils.intToHexString(entry.getStart(), Constants.HEX_ADDR_SIZE) + 
+						" with " + hex.length + " bytes (file size: " + outFileBytes.length + ")");
 				}
 				System.arraycopy(hex, 0, outFileBytes, entry.getStart(), hex.length);
 				totalBytesWritten += hex.length;
@@ -408,7 +414,7 @@ public class FileUtils {
 			throws IOException {
 		Utils.log(Utils.getMessage("consoleExtractingAsciiFile", secondFile, firstFile, thirdFile));
 		extractAsciiFile(new HexTable(firstFile), Files.readAllBytes(Paths.get(secondFile)), thirdFile, offsetsArg,
-			true);
+			true, true);
 	    }
 	/**
 	 * Returns the ascii file with only Constants.NEWLINE as line separators.
@@ -424,9 +430,9 @@ public class FileUtils {
 	 * Extracts the ascii file.
 	 */
 	private static void extractAsciiFile(HexTable hexTable, byte[] fileBytes, String outFile, String offsetsArg,
-										 boolean showExtractions) throws IOException {
+										 boolean showExtractions, boolean splitLines) throws IOException {
 		if (offsetsArg != null && offsetsArg.length() > 0) {
-			extractAsciiFile(hexTable, fileBytes, outFile, Utils.getOffsets(offsetsArg), showExtractions);
+			extractAsciiFile(hexTable, fileBytes, outFile, Utils.getOffsets(offsetsArg), showExtractions, splitLines);
 		}
 	}
 
@@ -434,11 +440,11 @@ public class FileUtils {
 	 * Extracts the ascii file.
 	 */
 	public static void extractAsciiFile(HexTable hexTable, byte[] fileBytes, String outFile, List<OffsetEntry> offsets,
-			boolean showExtractions) throws IOException {
+			boolean showExtractions, boolean splitLines) throws IOException {
 		StringBuilder fileOut = new StringBuilder();
 		if (offsets != null && !offsets.isEmpty()) {
 			for (OffsetEntry entry : offsets) {
-				fileOut.append(hexTable.toAscii(fileBytes, entry, showExtractions));
+				fileOut.append(hexTable.toAscii(fileBytes, entry, showExtractions, splitLines));
 			}
 		}
 		writeFileAscii(outFile, fileOut.toString());
@@ -709,7 +715,7 @@ public class FileUtils {
 						.replace(Constants.SPACE_STR, Constants.EMPTY).split(Constants.OFFSET_CHAR_SEPARATOR)),
 				dictFile);
 		if (entries != null && entries.length() > 0) {
-			extractAsciiFile(hexTable, fileBytes, extractFile, entries, false);
+			extractAsciiFile(hexTable, fileBytes, extractFile, entries, false, true);
 		}
 	}
 

@@ -71,11 +71,20 @@ public class KeyConstants {
 	/** The Constant KEY_EXTRACT_MENUITEM. */
 	public static final String KEY_EXTRACT_MENUITEM = "extractMenuItem";
 
+	/** The Constant KEY_LOAD_OFFSETS_MENUITEM. */
+	public static final String KEY_LOAD_OFFSETS_MENUITEM = "loadOffsetsMenuItem";
+
 	/** The Constant KEY_EXTRACT_RESULT_TITLE. */
 	public static final String KEY_EXTRACT_RESULT_TITLE = "extractResultTitle";
 
 	/** The Constant KEY_EXTRACT_RESULT_DESC. */
 	public static final String KEY_EXTRACT_RESULT_DESC = "extractResultDesc";
+
+	/** The Constant KEY_EXTRACTION_MODE_TITLE. */
+	public static final String KEY_EXTRACTION_MODE_TITLE = "extractionModeTitle";
+
+	/** The Constant KEY_EXTRACTION_MODE_MESSAGE. */
+	public static final String KEY_EXTRACTION_MODE_MESSAGE = "extractionModeMessage";
 
 	/** The Constant KEY_OFFSET_INPUT. */
 	public static final String KEY_OFFSET_INPUT = "offsetInput";
@@ -88,6 +97,54 @@ public class KeyConstants {
 
 	/** The Constant KEY_FIND_MENUITEM. */
 	public static final String KEY_FIND_MENUITEM = "findMenuItem";
+
+	/** The Constant KEY_NEW_PROJECT_FIND_BUTTON. */
+	public static final String KEY_NEW_PROJECT_FIND_BUTTON = "newProjectFindButton";
+
+	/** The Constant KEY_FIND_HEX_MENUITEM. */
+	public static final String KEY_FIND_HEX_MENUITEM = "findHexMenuItem";
+
+	/** The Constant KEY_FIND_POINTERS_MENUITEM. */
+	public static final String KEY_FIND_POINTERS_MENUITEM = "findPointersMenuItem";
+
+	/** The Constant KEY_FIND_POINTERS_START_HEX. */
+	public static final String KEY_FIND_POINTERS_START_HEX = "findPointersStartHex";
+
+	/** The Constant KEY_FIND_POINTERS_END_HEX. */
+	public static final String KEY_FIND_POINTERS_END_HEX = "findPointersEndHex";
+
+	/** The Constant KEY_FIND_POINTERS_FROM_OFFSET. */
+	public static final String KEY_FIND_POINTERS_FROM_OFFSET = "findPointersFromOffset";
+
+	/** The Constant KEY_FIND_POINTERS_TO_OFFSET. */
+	public static final String KEY_FIND_POINTERS_TO_OFFSET = "findPointersToOffset";
+
+	/** The Constant KEY_FIND_POINTERS_OK_BUTTON. */
+	public static final String KEY_FIND_POINTERS_OK_BUTTON = "findPointersOkButton";
+
+	/** The Constant KEY_FIND_POINTERS_CANCEL_BUTTON. */
+	public static final String KEY_FIND_POINTERS_CANCEL_BUTTON = "findPointersCancelButton";
+
+	/** The Constant KEY_FIND_POINTERS_REQUIRED_FIELDS. */
+	public static final String KEY_FIND_POINTERS_REQUIRED_FIELDS = "findPointersRequiredFields";
+
+	/** The Constant KEY_FIND_POINTERS_EVEN_LENGTH. */
+	public static final String KEY_FIND_POINTERS_EVEN_LENGTH = "findPointersEvenLength";
+
+	/** The Constant KEY_FIND_POINTERS_INVALID_RANGE. */
+	public static final String KEY_FIND_POINTERS_INVALID_RANGE = "findPointersInvalidRange";
+
+	/** The Constant KEY_FIND_POINTERS_NOT_FOUND. */
+	public static final String KEY_FIND_POINTERS_NOT_FOUND = "findPointersNotFound";
+
+	/** The Constant KEY_FIND_POINTERS_NO_VALID_RANGES. */
+	public static final String KEY_FIND_POINTERS_NO_VALID_RANGES = "findPointersNoValidRanges";
+
+	/** The Constant KEY_FIND_POINTERS_INVALID_FORMAT. */
+	public static final String KEY_FIND_POINTERS_INVALID_FORMAT = "findPointersInvalidFormat";
+
+	/** The Constant KEY_FIND_HEX. */
+	public static final String KEY_FIND_HEX = "findHex";
 
 	/** The Constant KEY_FIND. */
 	public static final String KEY_FIND = "find";
@@ -268,9 +325,6 @@ public class KeyConstants {
 
 	/** The Constant KEY_CONFIRM_ACTION. */
 	public static final String KEY_CONFIRM_ACTION = "confirmAction";
-
-	/** The Constant KEY_CONFIRM_FILE_OVERWRITE_ACTION. */
-	public static final String KEY_CONFIRM_FILE_OVERWRITE_ACTION = "confirmReplaceFileAction";
 
 	/** The Constant KEY_CONFIRM_OVERWRITE_TITLE. */
 	public static final String KEY_CONFIRM_OVERWRITE_TITLE = "confirmOverwriteTitle";
