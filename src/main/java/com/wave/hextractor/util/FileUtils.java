@@ -13,7 +13,6 @@ import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.zip.CRC32;
 
@@ -355,6 +354,7 @@ public class FileUtils {
 		HexTable hexTable = new HexTable(firstFile);
 		String input = getAsciiFile(secondFile);
 		byte[] outFileBytes = Files.readAllBytes(Paths.get(thirdFile));
+		
 		String[] lines = input.split(Constants.S_NEWLINE);
 		int totalBytesWritten = 0;
 		int line = 0;
@@ -379,10 +379,16 @@ public class FileUtils {
 				// End line
 				content.append(lines[line]).append(Constants.S_NEWLINE);
 
-				// Process
+			// Process
 				byte[] hex = hexTable.toHex(content.toString(), entry);
 				if (Utils.isDebug()) {
 					Utils.log(" TO OFFSET: " + Utils.intToHexString(entry.getStart(), Constants.HEX_ADDR_SIZE));
+				}
+				// Validar que no sobrepasamos el límite del archivo
+				if (entry.getStart() + hex.length > outFileBytes.length) {
+					throw new IOException("ERROR: Insertion would exceed file bounds at offset " + 
+						Utils.intToHexString(entry.getStart(), Constants.HEX_ADDR_SIZE) + 
+						" with " + hex.length + " bytes (file size: " + outFileBytes.length + ")");
 				}
 				System.arraycopy(hex, 0, outFileBytes, entry.getStart(), hex.length);
 				totalBytesWritten += hex.length;
@@ -408,7 +414,7 @@ public class FileUtils {
 			throws IOException {
 		Utils.log(Utils.getMessage("consoleExtractingAsciiFile", secondFile, firstFile, thirdFile));
 		extractAsciiFile(new HexTable(firstFile), Files.readAllBytes(Paths.get(secondFile)), thirdFile, offsetsArg,
-			true);
+			true, true);
 	    }
 	/**
 	 * Returns the ascii file with only Constants.NEWLINE as line separators.
@@ -417,16 +423,63 @@ public class FileUtils {
 	 * @throws IOException .
 	 */
 	public static String getAsciiFile(String filename) throws IOException {
-		return String.join(String.valueOf(Constants.NEWLINE), java.nio.file.Files.readAllLines(java.nio.file.Paths.get(filename)));
+		java.nio.file.Path requested = java.nio.file.Paths.get(filename);
+		// If the path exists as provided (absolute or relative), return it
+		if (java.nio.file.Files.exists(requested)) {
+			return String.join(String.valueOf(Constants.NEWLINE), java.nio.file.Files.readAllLines(requested));
+		}
+		// Try to find the file by resolving the given path against the current working directory and its parents
+		java.nio.file.Path found = findInParents(requested);
+		if (found != null && java.nio.file.Files.exists(found)) {
+			return String.join(String.valueOf(Constants.NEWLINE), java.nio.file.Files.readAllLines(found));
+		}
+		// Not found: throw IOException similar to Files.readAllLines behavior
+		throw new java.io.IOException("File not found: " + filename);
+	}
+
+	/**
+	 * Tries to find the given path by resolving it against the current working directory
+	 * and its parent directories, and also against the application directory and its parents.
+	 * Returns the first matching absolute Path, or null if none found.
+	 */
+	public static java.nio.file.Path findInParents(java.nio.file.Path relative) {
+		if (relative == null) return null;
+		// If it's absolute just return it if exists
+		if (relative.isAbsolute()) {
+			return java.nio.file.Files.exists(relative) ? relative : null;
+		}
+		java.util.List<java.nio.file.Path> starts = new java.util.ArrayList<>();
+		// current working directory (use user.dir so tests can override it)
+		starts.add(new java.io.File(System.getProperty("user.dir")).toPath().toAbsolutePath().normalize());
+		// application directory (jar or classes folder)
+		try {
+			java.io.File jarDir = com.wave.hextractor.util.Utils.getJarDirectory();
+			if (jarDir != null) {
+				starts.add(jarDir.toPath().toAbsolutePath().normalize());
+			}
+		} catch (Exception e) {
+			// ignore - best-effort
+		}
+		for (java.nio.file.Path start : starts) {
+			java.nio.file.Path current = start;
+			while (current != null) {
+				java.nio.file.Path candidate = current.resolve(relative).normalize();
+				if (java.nio.file.Files.exists(candidate)) {
+					return candidate;
+				}
+				current = current.getParent();
+			}
+		}
+		return null;
 	}
 
 	/**
 	 * Extracts the ascii file.
 	 */
 	private static void extractAsciiFile(HexTable hexTable, byte[] fileBytes, String outFile, String offsetsArg,
-										 boolean showExtractions) throws IOException {
+										 boolean showExtractions, boolean splitLines) throws IOException {
 		if (offsetsArg != null && offsetsArg.length() > 0) {
-			extractAsciiFile(hexTable, fileBytes, outFile, Utils.getOffsets(offsetsArg), showExtractions);
+			extractAsciiFile(hexTable, fileBytes, outFile, Utils.getOffsets(offsetsArg), showExtractions, splitLines);
 		}
 	}
 
@@ -434,11 +487,11 @@ public class FileUtils {
 	 * Extracts the ascii file.
 	 */
 	public static void extractAsciiFile(HexTable hexTable, byte[] fileBytes, String outFile, List<OffsetEntry> offsets,
-			boolean showExtractions) throws IOException {
+			boolean showExtractions, boolean splitLines) throws IOException {
 		StringBuilder fileOut = new StringBuilder();
 		if (offsets != null && !offsets.isEmpty()) {
 			for (OffsetEntry entry : offsets) {
-				fileOut.append(hexTable.toAscii(fileBytes, entry, showExtractions));
+				fileOut.append(hexTable.toAscii(fileBytes, entry, showExtractions, splitLines));
 			}
 		}
 		writeFileAscii(outFile, fileOut.toString());
@@ -709,7 +762,7 @@ public class FileUtils {
 						.replace(Constants.SPACE_STR, Constants.EMPTY).split(Constants.OFFSET_CHAR_SEPARATOR)),
 				dictFile);
 		if (entries != null && entries.length() > 0) {
-			extractAsciiFile(hexTable, fileBytes, extractFile, entries, false);
+			extractAsciiFile(hexTable, fileBytes, extractFile, entries, false, true);
 		}
 	}
 

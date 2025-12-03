@@ -3,6 +3,7 @@ package com.wave.hextractor.util;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 
 /**
@@ -162,7 +163,7 @@ public class SMSChecksumUtils {
 	private static boolean isSMSOverseasRom(byte[] file) {
 		byte[] header = getSMSHeader(file);
 		return header[SMS_HEADER_COUNTRY_CHECKSUMRANGE_OFFSET] >> HIGH_NIBBLE_SHIFTS == SMS_HEADER_COUNTRY_OVERSEAS
-				&& new String(header).startsWith(SMS_HEADER_START);
+				&& new String(header, StandardCharsets.US_ASCII).startsWith(SMS_HEADER_START);
 	}
 
 	/**

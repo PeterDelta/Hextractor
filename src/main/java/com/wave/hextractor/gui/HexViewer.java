@@ -23,7 +23,6 @@ import java.nio.file.Paths;
 import java.text.MessageFormat;
 import java.util.*;
 import java.util.List;
-import java.util.List;
 import java.util.AbstractMap.SimpleEntry;
 import java.util.Map.Entry;
 
@@ -33,10 +32,10 @@ import java.util.Map.Entry;
  */
 public class HexViewer extends JFrame implements ActionListener {
     static {
-            UIManager.put("OptionPane.noButtonText", "No");
-            UIManager.put("OptionPane.yesButtonText", "Sí");
-            UIManager.put("OptionPane.okButtonText", "Aceptar");
-            UIManager.put("OptionPane.cancelButtonText", "Cancelar");
+        UIManager.put("OptionPane.noButtonText", "No");
+        UIManager.put("OptionPane.yesButtonText", "Sí");
+        UIManager.put("OptionPane.okButtonText", "Aceptar");
+        UIManager.put("OptionPane.cancelButtonText", "Cancelar");
         // Cambiar textos de JFileChooser a español con dos puntos
         UIManager.put("FileChooser.saveInLabelText", "Guardar en:");
         UIManager.put("FileChooser.filesOfTypeLabelText", "Tipo de Archivo:");
@@ -127,7 +126,10 @@ public class HexViewer extends JFrame implements ActionListener {
     private JMenuItem searchRelative;
     private JMenuItem searchAll;
     private JMenuItem extract;
+    private JMenuItem loadOffsets;
     private JMenuItem find;
+    private JMenuItem findHex;
+    private JMenuItem findPointers;
     private JMenuItem clearOffsets;
     private JMenuItem compareRomsItem;
     private JCheckBoxMenuItem askEndCharactersItem;
@@ -205,9 +207,6 @@ public class HexViewer extends JFrame implements ActionListener {
 
     /** The Constant SEARCH_ALL_MAX_PROGRESS. */
     private static final int SEARCH_ALL_MAX_PROGRESS = 100;
-
-    /** The Constant OFFSET_SEARCH_RADIUS. */
-    private static final int OFFSET_SEARCH_RADIUS = 10;
 
     /** The Constant ROM_EXTENSIONS. */
     private static final String[] ROM_EXTENSIONS = {"md", "smd", "sms", "gba", "sfc", "nes", "bin", "smc", "gen", "gb", "gbc", "gg", "iso"};
@@ -333,13 +332,13 @@ public class HexViewer extends JFrame implements ActionListener {
     private SimpleFilter extOnlyFileFilter;
 
     /** The results window. */
-    private JFrame resultsWindow;
+    private JDialog resultsWindow;
 
     /** The search results. */
     private JList<TableSearchResult> searchResults;
 
     /** The new project window. */
-    private JFrame newPrjWin;
+    private JDialog newPrjWin;
 
     /** The new project window name input. */
     private JTextField newPrjWinNameInput;
@@ -359,6 +358,9 @@ public class HexViewer extends JFrame implements ActionListener {
     /** The new project window cancel button. */
     private JButton newPrjWinCancelButton;
 
+    /** The new project window retro files checkbox. */
+    private JCheckBox newPrjWinRetroFilesCheckBox;
+
     /** Current bytes per row (default 32). */
     private int visibleColumns = DEFAULT_VISIBLE_COLUMNS;
 
@@ -366,7 +368,7 @@ public class HexViewer extends JFrame implements ActionListener {
     private int visibleRows = 32; // Start with the view that shows more lines; will be recalculated dynamically
 
     /** The search all strings window. */
-    private JFrame searchAllStringsWin;
+    private JDialog searchAllStringsWin;
 
     /** The search all win skip chars opt. */
     private JComboBox<Integer> searchAllWinSkipCharsOpt;
@@ -455,22 +457,6 @@ public class HexViewer extends JFrame implements ActionListener {
      */
     private void showMessage(String message, String title, int messageType) {
         JOptionPane.showMessageDialog(this, message, title, messageType);
-    }
-
-    /**
-     * Creates a navigation action for buttons.
-     *
-     * @param name the action name
-     * @param action the action to perform
-     * @return the action
-     */
-    private Action createNavAction(String name, Runnable action) {
-        return new AbstractAction(name) {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                action.run();
-            }
-        };
     }
 
     /**
@@ -653,7 +639,8 @@ public class HexViewer extends JFrame implements ActionListener {
         secondRow.setBorder(BorderFactory.createEmptyBorder(0, 0, 2, 0));
         add(secondRow, BorderLayout.SOUTH);
         statusPanel = secondRow;
-        resultsWindow = new JFrame(rb.getString(KeyConstants.KEY_SEARCH_RESULT_TITLE));
+        resultsWindow = new JDialog(HexViewer.this, rb.getString(KeyConstants.KEY_SEARCH_RESULT_TITLE), false);
+        resultsWindow.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
         resultsWindow.setLayout(new FlowLayout());
         searchResults = new JList<>(new TableSearchResult[0]);
         searchResults.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
@@ -690,14 +677,44 @@ public class HexViewer extends JFrame implements ActionListener {
         resultsWindow.add(listScroller);
         resultsWindow.pack();
         resultsWindow.setResizable(Boolean.FALSE);
+        // Apply Hextractor icons
+        applyIconsToWindow(resultsWindow);
+        // Agregar tecla Escape para cerrar
+        resultsWindow.getRootPane().registerKeyboardAction(
+            evt -> resultsWindow.dispose(),
+            KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0),
+            JComponent.WHEN_IN_FOCUSED_WINDOW
+        );
         vsb = new JScrollBar(JScrollBar.VERTICAL);
         // Ajuste intermedio del ancho de la barra de desplazamiento
         vsb.setPreferredSize(new Dimension(GuiUtils.scaleInt(15), 0)); // Ancho fijo, altura auto
         // Conectar scrollbar con offset: mover el scroll cambia el offset mostrado
         vsb.addAdjustmentListener(e -> {
+            // Preserve visual caret column/row when scrolling with scrollbar
+            int oldOffset = offset;
+            int localByte = 0;
+            if (asciiTextArea != null) {
+                try {
+                    localByte = mapAsciiDocPosToByteIndex(asciiTextArea.getCaretPosition());
+                } catch (Exception ex) {
+                    localByte = (caretByteIndex >= 0) ? Math.max(0, Math.min(getViewSize() - 1, caretByteIndex - oldOffset)) : 0;
+                }
+            } else {
+                localByte = (caretByteIndex >= 0) ? Math.max(0, Math.min(getViewSize() - 1, caretByteIndex - oldOffset)) : 0;
+            }
+
             offset = e.getValue();
             // Rebuild view for new offset
             updateThreeAreaContent();
+
+            // Restore caret to keep same visual row/column
+            int newLocal = Math.max(0, Math.min(getViewSize() - 1, localByte));
+            caretByteIndex = offset + newLocal;
+            int docPos = mapByteIndexToAsciiDocPos(caretByteIndex - offset);
+            if (asciiTextArea != null && docPos >= 0 && docPos <= asciiTextArea.getDocument().getLength()) {
+                asciiTextArea.setCaretPosition(docPos);
+                refreshSelection();
+            }
         });
         add(vsb, BorderLayout.EAST);
 
@@ -1087,6 +1104,17 @@ public class HexViewer extends JFrame implements ActionListener {
      * Sets the icons.
      */
     private void setIcons() {
+        List<Image> images = getHextractorImages();
+        if (!images.isEmpty()) {
+            this.setIconImages(images);
+        }
+    }
+
+    /**
+     * Gets the list of Hextractor icons with proper scaling.
+     * @return list of Image objects for use in any window
+     */
+    private List<Image> getHextractorImages() {
         List<Image> images = new ArrayList<>();
         try {
             if (ICON96 != null) {
@@ -1110,17 +1138,37 @@ public class HexViewer extends JFrame implements ActionListener {
         } catch (Exception e) {
             Utils.logException(e);
         }
+        return images;
+    }
+
+    /**
+     * Applies Hextractor icons to any window (JFrame or JDialog).
+     * Use this method on all newly created windows to ensure consistent branding.
+     * @param window the window to apply icons to
+     */
+    private void applyIconsToWindow(Window window) {
+        List<Image> images = getHextractorImages();
         if (!images.isEmpty()) {
-            this.setIconImages(images);
+            if (window instanceof JFrame) {
+                ((JFrame) window).setIconImages(images);
+            } else if (window instanceof JDialog) {
+                ((JDialog) window).setIconImages(images);
+            }
         }
     }
+
+
 
     /**
      * createSearchAllWin.
      */
     private void createSearchAllWin() {
-        searchAllStringsWin = new JFrame(rb.getString(KeyConstants.KEY_SEARCH_ALL_WIN_TITLE));
-        searchAllStringsWin.setLayout(new GridLayout(SEARCH_ALL_GRID_ROWS, SEARCH_ALL_GRID_COLS, GuiUtils.scaleInt(5), GuiUtils.scaleInt(5)));
+        searchAllStringsWin = new JDialog(HexViewer.this, rb.getString(KeyConstants.KEY_SEARCH_ALL_WIN_TITLE), false);
+        searchAllStringsWin.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
+        JPanel contentPanel = new JPanel(new GridBagLayout());
+        contentPanel.setBorder(BorderFactory.createEmptyBorder(GuiUtils.scaleInt(10), GuiUtils.scaleInt(10), GuiUtils.scaleInt(10), GuiUtils.scaleInt(10)));
+        searchAllStringsWin.setLayout(new BorderLayout());
+        searchAllStringsWin.add(contentPanel, BorderLayout.CENTER);
         JLabel searchAllWinSkipCharsLabel = new JLabel(rb.getString(KeyConstants.KEY_SEARCH_ALL_WIN_SKIP_CHARS_LABEL), SwingConstants.LEFT);
         JLabel searchAllWinEndCharsLabel = new JLabel(rb.getString(KeyConstants.KEY_SEARCH_ALL_WIN_END_CHARS_LABEL), SwingConstants.LEFT);
         searchAllWinEndCharsInput = new JTextField(GuiUtils.scaleInt(15));
@@ -1136,14 +1184,37 @@ public class HexViewer extends JFrame implements ActionListener {
         if (searchAllWinCancelButton == null) {
             searchAllWinCancelButton = new JButton(rb.getString(KeyConstants.KEY_SEARCH_ALL_WIN_CANCEL_BUTTON));
         }
-        searchAllStringsWin.add(searchAllWinSkipCharsLabel);
-        searchAllStringsWin.add(searchAllWinSkipCharsOpt);
-        searchAllStringsWin.add(searchAllWinEndCharsLabel);
-        searchAllStringsWin.add(searchAllWinEndCharsInput);
-        searchAllStringsWin.add(searchAllWinSearchButton);
-        searchAllStringsWin.add(searchAllWinCancelButton);
-        searchAllStringsWin.add(searchAllWinProgressBar);
-        searchAllStringsWin.add(new JLabel());
+        // Layout with GridBagLayout for precise alignment and sizing without changing window size
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(GuiUtils.scaleInt(3), GuiUtils.scaleInt(3), GuiUtils.scaleInt(3), GuiUtils.scaleInt(3));
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+
+        // Row 0: skip chars label + dropdown (compact)
+        gbc.gridx = 0; gbc.gridy = 0; gbc.weightx = 0.0; gbc.gridwidth = 1;
+        contentPanel.add(searchAllWinSkipCharsLabel, gbc);
+        gbc.gridx = 1; gbc.gridy = 0; gbc.weightx = 1.0;
+        searchAllWinSkipCharsOpt.setPreferredSize(new Dimension(GuiUtils.scaleInt(48), searchAllWinSkipCharsOpt.getPreferredSize().height));
+        contentPanel.add(searchAllWinSkipCharsOpt, gbc);
+
+        // Row 1: end chars label on left and the input next to it (restore original position)
+        gbc.gridx = 0; gbc.gridy = 1; gbc.weightx = 0.0; gbc.gridwidth = 1;
+        contentPanel.add(searchAllWinEndCharsLabel, gbc);
+        gbc.gridx = 1; gbc.gridy = 1; gbc.weightx = 1.0; gbc.gridwidth = 1; gbc.anchor = GridBagConstraints.WEST;
+        contentPanel.add(searchAllWinEndCharsInput, gbc);
+
+        // Row 2: buttons centered across both columns
+        gbc.gridx = 0; gbc.gridy = 2; gbc.weightx = 1.0; gbc.gridwidth = 2; gbc.anchor = GridBagConstraints.CENTER;
+        JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, GuiUtils.scaleInt(6), 0));
+        btnPanel.add(searchAllWinSearchButton);
+        btnPanel.add(searchAllWinCancelButton);
+        contentPanel.add(btnPanel, gbc);
+
+        // Row 3: progress bar (full width)
+
+        // Row 2: (buttons) already set above
+        // Row 3: progress bar (full width)
+        gbc.gridx = 0; gbc.gridy = 3; gbc.gridwidth = 2; gbc.weightx = 1.0; gbc.anchor = GridBagConstraints.CENTER;
+        contentPanel.add(searchAllWinProgressBar, gbc);
         
         // Apply scaled font to all components in search all window
         Font dialogFont = GuiUtils.scaleFont(searchAllWinSkipCharsLabel.getFont());
@@ -1158,13 +1229,22 @@ public class HexViewer extends JFrame implements ActionListener {
         // Establecer tamaño fijo compacto con layout vertical
         searchAllStringsWin.setSize(GuiUtils.scaleInt(SEARCH_STRINGS_WINDOW_WIDTH), GuiUtils.scaleInt(SEARCH_STRINGS_WINDOW_HEIGHT));
         searchAllStringsWin.setResizable(Boolean.FALSE);
+        // Apply Hextractor icons
+        applyIconsToWindow(searchAllStringsWin);
+        // Agregar tecla Escape para cerrar
+        searchAllStringsWin.getRootPane().registerKeyboardAction(
+            evt -> searchAllStringsWin.dispose(),
+            KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0),
+            JComponent.WHEN_IN_FOCUSED_WINDOW
+        );
     }
 
     /**
      * createNewPrjWin.
      */
     private void createNewPrjWin() {
-        newPrjWin = new JFrame(rb.getString(KeyConstants.KEY_NEW_PRJ_TITLE));
+        newPrjWin = new JDialog(HexViewer.this, rb.getString(KeyConstants.KEY_NEW_PRJ_TITLE), false);
+        newPrjWin.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
         newPrjWin.setLayout(new BorderLayout(GuiUtils.scaleInt(LAYOUT_MARGIN), GuiUtils.scaleInt(LAYOUT_MARGIN)));
         newPrjWin.setResizable(false);
         
@@ -1213,7 +1293,7 @@ public class HexViewer extends JFrame implements ActionListener {
         // Panel central con 3 filas
         JPanel centerPanel = new JPanel();
         centerPanel.setLayout(new BoxLayout(centerPanel, BoxLayout.Y_AXIS));
-        centerPanel.setBorder(BorderFactory.createEmptyBorder(GuiUtils.scaleInt(LAYOUT_MARGIN), GuiUtils.scaleInt(LAYOUT_MARGIN), GuiUtils.scaleInt(LAYOUT_MARGIN), GuiUtils.scaleInt(LAYOUT_MARGIN)));
+        centerPanel.setBorder(BorderFactory.createEmptyBorder(GuiUtils.scaleInt(LAYOUT_MARGIN), GuiUtils.scaleInt(LAYOUT_MARGIN), 0, GuiUtils.scaleInt(LAYOUT_MARGIN)));
         
         // Fila 1: Archivo a traducir
         JPanel fileRow = new JPanel(new BorderLayout(GuiUtils.scaleInt(5), 0));
@@ -1221,7 +1301,7 @@ public class HexViewer extends JFrame implements ActionListener {
         JPanel fileInputPanel = new JPanel(new BorderLayout(GuiUtils.scaleInt(5), 0));
         // Ensure search/create/cancel buttons exist before adding; actions will be set in setActionsNewPrjWin()
         if (newPrjWinSearchFileButton == null) {
-            newPrjWinSearchFileButton = new JButton(rb.getString(KeyConstants.KEY_FIND_MENUITEM));
+            newPrjWinSearchFileButton = new JButton(rb.getString(KeyConstants.KEY_NEW_PROJECT_FIND_BUTTON));
         }
         fileInputPanel.add(newPrjWinFileInput, BorderLayout.CENTER);
         fileInputPanel.add(newPrjWinSearchFileButton, BorderLayout.EAST);
@@ -1243,6 +1323,13 @@ public class HexViewer extends JFrame implements ActionListener {
         centerPanel.add(typeRow);
         centerPanel.add(Box.createVerticalStrut(GuiUtils.scaleInt(LAYOUT_MARGIN)));
         
+        // Fila 4: Checkbox retrocompatibilidad
+        JPanel retroRow = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        newPrjWinRetroFilesCheckBox = new JCheckBox(rb.getString("newProjectRetroCheckbox"));
+        newPrjWinRetroFilesCheckBox.setFont(dialogFont);
+        retroRow.add(newPrjWinRetroFilesCheckBox);
+        centerPanel.add(retroRow);
+        
         // Panel de botones (abajo, centrados)
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, GuiUtils.scaleInt(LAYOUT_MARGIN), GuiUtils.scaleInt(SMALL_LAYOUT_MARGIN)));
         if (newPrjWinCreateButton == null) {
@@ -1263,9 +1350,17 @@ public class HexViewer extends JFrame implements ActionListener {
         newPrjWinCancelButton.setFont(dialogFont);
 
         newPrjWin.pack();
-        // Establecer tamaño fijo compacto (reducido sin checkbox)
-        newPrjWin.setSize(GuiUtils.scaleInt(420), GuiUtils.scaleInt(210));
+        // Establecer tamaño fijo compacto (con checkbox)
+        newPrjWin.setSize(GuiUtils.scaleInt(420), GuiUtils.scaleInt(240));
         newPrjWin.setResizable(Boolean.FALSE);
+        // Apply Hextractor icons
+        applyIconsToWindow(newPrjWin);
+        // Agregar tecla Escape para cerrar
+        newPrjWin.getRootPane().registerKeyboardAction(
+            evt -> newPrjWin.dispose(),
+            KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0),
+            JComponent.WHEN_IN_FOCUSED_WINDOW
+        );
     }
 
     /**
@@ -1366,7 +1461,7 @@ public class HexViewer extends JFrame implements ActionListener {
         // Forzar ajuste tras cambio de escala
         SwingUtilities.invokeLater(() -> {
             adjustWindowToContent();
-            // Al reducir a 125% queremos que la ventana se reajuste al contenido
+            // Al reducir a 125% la ventana se reajusta al contenido
             pack();
             refreshAll();
         });
@@ -1430,7 +1525,10 @@ public class HexViewer extends JFrame implements ActionListener {
         searchRelative = new JMenuItem(rb.getString(KeyConstants.KEY_SEARCH_RELATIVE_MENUITEM));
         searchAll = new JMenuItem(rb.getString(KeyConstants.KEY_SEARCH_ALL_MENUITEM));
         extract = new JMenuItem(rb.getString(KeyConstants.KEY_EXTRACT_MENUITEM));
+        loadOffsets = new JMenuItem(rb.getString(KeyConstants.KEY_LOAD_OFFSETS_MENUITEM));
         find = new JMenuItem(rb.getString(KeyConstants.KEY_FIND_MENUITEM));
+        findHex = new JMenuItem(rb.getString(KeyConstants.KEY_FIND_HEX_MENUITEM));
+        findPointers = new JMenuItem(rb.getString(KeyConstants.KEY_FIND_POINTERS_MENUITEM));
         nextOffset = new JMenuItem(rb.getString(KeyConstants.KEY_NEXT_RANGE_MENUITEM));
         prevOffset = new JMenuItem(rb.getString(KeyConstants.KEY_PREV_TANGE_MENUITEM));
         clearOffsets = new JMenuItem(rb.getString(KeyConstants.KEY_CLEAN_OFFSETS));
@@ -1451,6 +1549,7 @@ public class HexViewer extends JFrame implements ActionListener {
 
         // Mover "Buscar todo" (Ctrl+A) al menú Rangos, en primera posición
         offsetMenu.add(searchAll);
+        offsetMenu.add(loadOffsets);
         offsetMenu.add(extract);
         offsetMenu.add(nextOffset);
         offsetMenu.add(prevOffset);
@@ -1460,6 +1559,8 @@ public class HexViewer extends JFrame implements ActionListener {
         toolsMenu.add(goTo);
         toolsMenu.add(searchRelative);
         toolsMenu.add(find);
+        toolsMenu.add(findHex);
+        toolsMenu.add(findPointers);
 
         // Comparar ROMs
         compareRomsItem = new JMenuItem(rb.getString(KeyConstants.KEY_COMPARE_ROMS_MENUITEM));
@@ -1498,6 +1599,11 @@ public class HexViewer extends JFrame implements ActionListener {
             cols16Item.setSelected(false);
             cols32Item.setSelected(true);
         });
+
+        // Shortcut for loading ranges: Ctrl+Shift+S
+        loadOffsets.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_S, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK));
+        loadOffsets.addActionListener(e -> loadOffsetsAction());
+
         columnsSub.add(cols16Item);
         columnsSub.add(cols32Item);
         viewMenu.add(columnsSub);
@@ -1579,37 +1685,36 @@ public class HexViewer extends JFrame implements ActionListener {
         if (res2 != JFileChooser.APPROVE_OPTION) return;
         File mod = chooser2.getSelectedFile();
 
-        JFileChooser chooser3 = new JFileChooser(jarDir);
-        chooser3.setDialogTitle("Selecciona el archivo de salida .ext");
-        // Default filename: TR_#<current folder name>.ext
-        var folderName = jarDir.getName();
-        var defaultExtName = "TR_#" + folderName + EXTENSION_EXTRACTION;
-        chooser3.setSelectedFile(new File(jarDir, defaultExtName));
-        int res3;
-        File outExt;
-        while (true) {
-            res3 = chooser3.showSaveDialog(this);
-            if (res3 != JFileChooser.APPROVE_OPTION) return;
-            outExt = chooser3.getSelectedFile();
-            if (outExt.exists()) {
-                int overwrite = JOptionPane.showConfirmDialog(this,
-                    MessageFormat.format(rb.getString(KeyConstants.KEY_CONFIRM_OVERWRITE), outExt.getName()),
-                    rb.getString(KeyConstants.KEY_CONFIRM_OVERWRITE_TITLE),
-                    JOptionPane.YES_NO_OPTION,
-                    JOptionPane.WARNING_MESSAGE);
-                if (overwrite == JOptionPane.YES_OPTION) break;
-                // Si no, volver a mostrar el diálogo para elegir otro nombre
-            } else {
-                break;
-            }
+        // Get folder name for file naming
+        String folderName;
+        try {
+            folderName = new File(".").getCanonicalFile().getName();
+        } catch (IOException ex) {
+            folderName = "output";
+        }
+
+        // Generate output path automatically next to the JAR
+        File outExt = new File(jarDir, "TR_#" + folderName + ".ext");
+
+        // Check if file exists and ask for overwrite
+        if (outExt.exists()) {
+            int overwrite = JOptionPane.showConfirmDialog(this,
+                "El archivo " + outExt.getName() + " ya existe. ¿Desea sobrescribirlo?",
+                "Confirmar Sobrescritura",
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.QUESTION_MESSAGE);
+            if (overwrite != JOptionPane.YES_OPTION) return;
         }
 
         try {
             FileUtils.extractDiffAsExt(original, mod, outExt);
+            
             // Mostrar solo el nombre del archivo, no la ruta completa
-            showMessage(MessageFormat.format(rb.getString(KeyConstants.KEY_EXTRACTION_COMPLETED), outExt.getName()), rb.getString(KeyConstants.KEY_SUCCESS_TITLE), JOptionPane.INFORMATION_MESSAGE);
+            showMessage(MessageFormat.format(rb.getString(KeyConstants.KEY_EXTRACTION_COMPLETED), outExt.getName()), 
+                rb.getString(KeyConstants.KEY_SUCCESS_TITLE), JOptionPane.INFORMATION_MESSAGE);
         } catch (Exception ex) {
-            showMessage(MessageFormat.format(rb.getString(KeyConstants.KEY_EXTRACTION_ERROR), ex.getMessage()), rb.getString(KeyConstants.KEY_ERROR_TITLE), JOptionPane.ERROR_MESSAGE);
+            showMessage(MessageFormat.format(rb.getString(KeyConstants.KEY_EXTRACTION_ERROR), ex.getMessage()), 
+                rb.getString(KeyConstants.KEY_ERROR_TITLE), JOptionPane.ERROR_MESSAGE);
         }
     }
 
@@ -1680,8 +1785,13 @@ public class HexViewer extends JFrame implements ActionListener {
             private static final long serialVersionUID = 251407879942401215L;
             @Override
             public void actionPerformed(ActionEvent e) {
-                var outFileName = "TR_" + tableFile.getName().replaceAll(FileUtils.getFileExtension(tableFile.getName()),
-                        Constants.EXTRACT_EXTENSION_NODOT);
+                // Mostrar nombre sin extensión .ext en el diálogo
+                var baseName = tableFile.getName();
+                var extension = FileUtils.getFileExtension(baseName);
+                if (!extension.isEmpty()) {
+                    baseName = baseName.substring(0, baseName.lastIndexOf('.'));
+                }
+                var outFileName = "TR_" + baseName;
                 JFileChooser fileChooser = new JFileChooser();
                 File selectedFile = new File(outFileName);
                 fileChooser.setSelectedFile(selectedFile);
@@ -1698,13 +1808,21 @@ public class HexViewer extends JFrame implements ActionListener {
                 fileChooser.setCurrentDirectory(parent);
                 fileChooser.setFileFilter(extOnlyFileFilter);
                 fileChooser.setApproveButtonText(rb.getString(KeyConstants.KEY_SAVE_BUTTON));
-                if (fileChooser.showSaveDialog(extract) == JFileChooser.APPROVE_OPTION &&
-                        confirmSelectedFile(fileChooser.getSelectedFile())) {
-                    try {
-                        FileUtils.extractAsciiFile(hexTable, fileBytes, fileChooser.getSelectedFile().getAbsolutePath(),
-                                offEntries, false);
-                    } catch (Exception e1) {
-                        Utils.logException(e1);
+                if (fileChooser.showSaveDialog(HexViewer.this) == JFileChooser.APPROVE_OPTION) {
+                    File outputFile = fileChooser.getSelectedFile();
+                    // Añadir extensión .ext automáticamente si no la tiene
+                    if (!outputFile.getAbsolutePath().endsWith(EXTENSION_EXTRACTION)) {
+                        outputFile = new File(outputFile.getAbsolutePath() + EXTENSION_EXTRACTION);
+                    }
+                    if (confirmSelectedFile(outputFile)) {
+                        int option = JOptionPane.showConfirmDialog(null, rb.getString(KeyConstants.KEY_EXTRACTION_MODE_MESSAGE), rb.getString(KeyConstants.KEY_EXTRACTION_MODE_TITLE), JOptionPane.YES_NO_OPTION);
+                        boolean splitLines = (option == JOptionPane.NO_OPTION);
+                        try {
+                            FileUtils.extractAsciiFile(hexTable, fileBytes, outputFile.getAbsolutePath(),
+                                    offEntries, false, splitLines);
+                        } catch (Exception e1) {
+                            Utils.logException(e1);
+                        }
                     }
                 }
                 refreshAll();
@@ -1756,7 +1874,7 @@ public class HexViewer extends JFrame implements ActionListener {
                     parent = Utils.getJarDirectory();
                 }
                 fileChooser.setCurrentDirectory(parent);
-                if (fileChooser.showOpenDialog(openFile) ==
+                if (fileChooser.showOpenDialog(HexViewer.this) ==
                         JFileChooser.APPROVE_OPTION) {
                     reloadHexFile(fileChooser.getSelectedFile());
                 }
@@ -1815,7 +1933,7 @@ public class HexViewer extends JFrame implements ActionListener {
                         else {
                             searchResults.setListData(results.toArray(new TableSearchResult[0]));
                             resultsWindow.pack();
-                            resultsWindow.setLocationRelativeTo(resultsWindow.getParent());
+                            resultsWindow.setLocationRelativeTo(HexViewer.this);
                             resultsWindow.setVisible(true);
                         }
                     } catch (Exception e1) {
@@ -1843,7 +1961,7 @@ public class HexViewer extends JFrame implements ActionListener {
                         else {
                             searchResults.setListData(results.toArray(new TableSearchResult[0]));
                             resultsWindow.pack();
-                            resultsWindow.setLocationRelativeTo(resultsWindow.getParent());
+                            resultsWindow.setLocationRelativeTo(HexViewer.this);
                             resultsWindow.setVisible(true);
                         }
                     } catch (Exception e1) {
@@ -1851,6 +1969,259 @@ public class HexViewer extends JFrame implements ActionListener {
                     }
                     vsb.setValue(offset);
                 }
+            }
+        });
+        findHex.setAction(new AbstractAction(rb.getString(KeyConstants.KEY_FIND_HEX_MENUITEM)) {
+            /** serialVersionUID */
+            private static final long serialVersionUID = 251407879942401220L;
+
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                var searchString = JOptionPane.showInputDialog(rb.getString(KeyConstants.KEY_FIND_HEX));
+                if(searchString != null && searchString.length() > 0) {
+                    try {
+                        // Parse hex string to bytes (remove spaces and split into pairs)
+                        String cleanHex = searchString.trim().replaceAll("\\s+", "");
+                        if (cleanHex.length() % 2 != 0) {
+                            throw new IllegalArgumentException("Hex string must have even number of characters");
+                        }
+                        byte[] searchBytes = new byte[cleanHex.length() / 2];
+                        for (int i = 0; i < searchBytes.length; i++) {
+                            searchBytes[i] = (byte) Integer.parseInt(cleanHex.substring(i * 2, i * 2 + 2), 16);
+                        }
+                        // Search for the byte sequence
+                        List<Integer> results = new ArrayList<>();
+                        for (int i = 0; i <= fileBytes.length - searchBytes.length; i++) {
+                            boolean match = true;
+                            for (int j = 0; j < searchBytes.length; j++) {
+                                if (fileBytes[i + j] != searchBytes[j]) {
+                                    match = false;
+                                    break;
+                                }
+                            }
+                            if (match) {
+                                results.add(i);
+                            }
+                        }
+                        if(results.isEmpty()) {
+                            JOptionPane.showMessageDialog(help, rb.getString(KeyConstants.KEY_NO_RESULTS_DESC),
+                                    rb.getString(KeyConstants.KEY_NO_RESULTS_TITLE), JOptionPane.INFORMATION_MESSAGE);
+                        }
+                        else {
+                            // Convert to TableSearchResult for compatibility
+                            List<TableSearchResult> tableResults = new ArrayList<>();
+                            for (Integer offset : results) {
+                                TableSearchResult tsr = new TableSearchResult();
+                                tsr.setHexTable(hexTable);
+                                tsr.setOffset(offset);
+                                tsr.setWord(searchString);
+                                tableResults.add(tsr);
+                            }
+                            searchResults.setListData(tableResults.toArray(new TableSearchResult[0]));
+                            resultsWindow.pack();
+                            resultsWindow.setLocationRelativeTo(HexViewer.this);
+                            resultsWindow.setVisible(true);
+                        }
+                    } catch (Exception e1) {
+                        JOptionPane.showMessageDialog(searchRelative, "Invalid hex format. Use hexadecimal characters without spaces (e.g., FF0012)");
+                    }
+                    vsb.setValue(offset);
+                }
+            }
+        });
+        findPointers.setAction(new AbstractAction(rb.getString(KeyConstants.KEY_FIND_POINTERS_MENUITEM)) {
+            /** serialVersionUID */
+            private static final long serialVersionUID = 251407879942401221L;
+
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                JDialog dialog = new JDialog(HexViewer.this, rb.getString(KeyConstants.KEY_FIND_POINTERS_MENUITEM), false);
+                dialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
+
+                JPanel panel = new JPanel(new GridLayout(4, 2));
+                panel.setBorder(BorderFactory.createEmptyBorder(GuiUtils.scaleInt(10), GuiUtils.scaleInt(10), GuiUtils.scaleInt(10), GuiUtils.scaleInt(10)));
+                
+                // Crear y aplicar fuente escalada
+                Font dialogFont = GuiUtils.scaleFont(new JLabel().getFont());
+                
+                JLabel startHexLabel = new JLabel(rb.getString(KeyConstants.KEY_FIND_POINTERS_START_HEX));
+                startHexLabel.setFont(dialogFont);
+                panel.add(startHexLabel);
+                JTextField startField = new JTextField(GuiUtils.scaleInt(15));
+                startField.setFont(dialogFont);
+                panel.add(startField);
+                
+                JLabel endHexLabel = new JLabel(rb.getString(KeyConstants.KEY_FIND_POINTERS_END_HEX));
+                endHexLabel.setFont(dialogFont);
+                panel.add(endHexLabel);
+                JTextField endField = new JTextField(GuiUtils.scaleInt(15));
+                endField.setFont(dialogFont);
+                panel.add(endField);
+                
+                JLabel fromOffsetLabel = new JLabel(rb.getString(KeyConstants.KEY_FIND_POINTERS_FROM_OFFSET));
+                fromOffsetLabel.setFont(dialogFont);
+                panel.add(fromOffsetLabel);
+                JTextField fromOffsetField = new JTextField(GuiUtils.scaleInt(15));
+                fromOffsetField.setFont(dialogFont);
+                panel.add(fromOffsetField);
+                
+                JLabel toOffsetLabel = new JLabel(rb.getString(KeyConstants.KEY_FIND_POINTERS_TO_OFFSET));
+                toOffsetLabel.setFont(dialogFont);
+                panel.add(toOffsetLabel);
+                JTextField toOffsetField = new JTextField(GuiUtils.scaleInt(15));
+                toOffsetField.setFont(dialogFont);
+                panel.add(toOffsetField);
+
+                JButton okButton = new JButton(rb.getString(KeyConstants.KEY_FIND_POINTERS_OK_BUTTON));
+                okButton.setFont(dialogFont);
+                JButton cancelButton = new JButton(rb.getString(KeyConstants.KEY_FIND_POINTERS_CANCEL_BUTTON));
+                cancelButton.setFont(dialogFont);
+
+                okButton.addActionListener(new ActionListener() {
+                    @Override
+                    public void actionPerformed(ActionEvent ae) {
+                        try {
+                            final int MAX_POINTER_RESULTS = 10000;
+                            String startHex = startField.getText().trim().replaceAll("\\s+", "");
+                            String endHex = endField.getText().trim().replaceAll("\\s+", "");
+                            if (startHex.isEmpty() || endHex.isEmpty()) {
+                                JOptionPane.showMessageDialog(dialog, rb.getString(KeyConstants.KEY_FIND_POINTERS_REQUIRED_FIELDS));
+                                return;
+                            }
+                            if (startHex.length() % 2 != 0 || endHex.length() % 2 != 0) {
+                                JOptionPane.showMessageDialog(dialog, rb.getString(KeyConstants.KEY_FIND_POINTERS_EVEN_LENGTH));
+                                return;
+                            }
+                            byte[] startBytes = new byte[startHex.length() / 2];
+                            for (int i = 0; i < startBytes.length; i++) {
+                                startBytes[i] = (byte) Integer.parseInt(startHex.substring(i * 2, i * 2 + 2), 16);
+                            }
+                            byte[] endBytes = new byte[endHex.length() / 2];
+                            for (int i = 0; i < endBytes.length; i++) {
+                                endBytes[i] = (byte) Integer.parseInt(endHex.substring(i * 2, i * 2 + 2), 16);
+                            }
+                            long minOffset = 0;
+                            long maxOffset = fileBytes.length - 1;
+                            String fromHex = fromOffsetField.getText().trim().replaceAll("\\s+", "");
+                            String toHex = toOffsetField.getText().trim().replaceAll("\\s+", "");
+                            if (!fromHex.isEmpty()) {
+                                minOffset = Long.parseLong(fromHex, 16);
+                            }
+                            if (!toHex.isEmpty()) {
+                                maxOffset = Long.parseLong(toHex, 16);
+                            }
+                            if (minOffset > maxOffset) {
+                                JOptionPane.showMessageDialog(dialog, rb.getString(KeyConstants.KEY_FIND_POINTERS_INVALID_RANGE));
+                                return;
+                            }
+                            // Buscar todas las posiciones de startBytes en el rango
+                            List<Integer> startPositions = new ArrayList<>();
+                            int startMin = (int) Math.max(0, minOffset);
+                            int startMax = (int) Math.min(fileBytes.length - startBytes.length, maxOffset - startBytes.length + 1);
+                            for (int i = startMin; i <= startMax; i++) {
+                                boolean match = true;
+                                for (int j = 0; j < startBytes.length; j++) {
+                                    if (fileBytes[i + j] != startBytes[j]) {
+                                        match = false;
+                                        break;
+                                    }
+                                }
+                                if (match) {
+                                    startPositions.add(i);
+                                    if (startPositions.size() > MAX_POINTER_RESULTS) {
+                                        JOptionPane.showMessageDialog(dialog, "La búsqueda excede el límite de 10,000 resultados. Ajusta los parámetros para reducir el rango.");
+                                        return;
+                                    }
+                                }
+                            }
+                            // Buscar todas las posiciones de endBytes en el rango
+                            List<Integer> endPositions = new ArrayList<>();
+                            int endMin = (int) Math.max(0, minOffset);
+                            int endMax = (int) Math.min(fileBytes.length - endBytes.length, maxOffset - endBytes.length + 1);
+                            for (int i = endMin; i <= endMax; i++) {
+                                boolean match = true;
+                                for (int j = 0; j < endBytes.length; j++) {
+                                    if (fileBytes[i + j] != endBytes[j]) {
+                                        match = false;
+                                        break;
+                                    }
+                                }
+                                if (match) {
+                                    endPositions.add(i);
+                                    if (endPositions.size() > MAX_POINTER_RESULTS) {
+                                        JOptionPane.showMessageDialog(dialog, "La búsqueda excede el límite de 10,000 resultados. Ajusta los parámetros para reducir el rango.");
+                                        return;
+                                    }
+                                }
+                            }
+                            if (startPositions.isEmpty() || endPositions.isEmpty()) {
+                                JOptionPane.showMessageDialog(dialog, rb.getString(KeyConstants.KEY_FIND_POINTERS_NOT_FOUND));
+                                return;
+                            }
+                            // Crear rangos entre cada start y la siguiente end
+                            List<OffsetEntry> foundEntries = new ArrayList<>();
+                            for (int startPos : startPositions) {
+                                for (int endPos : endPositions) {
+                                    if (endPos > startPos + startBytes.length) {
+                                        int rangeStart = startPos + startBytes.length;
+                                        int rangeEnd = endPos - 1;
+                                        if (rangeStart < rangeEnd) {
+                                            OffsetEntry entry = new OffsetEntry(rangeStart, rangeEnd, null);
+                                            foundEntries.add(entry);
+                                            if (foundEntries.size() > MAX_POINTER_RESULTS) {
+                                                JOptionPane.showMessageDialog(dialog, "La búsqueda excede el límite de 10,000 rangos encontrados. Ajusta los parámetros para reducir el rango.");
+                                                return;
+                                            }
+                                        }
+                                        break; // Solo la primera end después de este start
+                                    }
+                                }
+                            }
+                            if (foundEntries.isEmpty()) {
+                                JOptionPane.showMessageDialog(dialog, rb.getString(KeyConstants.KEY_FIND_POINTERS_NO_VALID_RANGES));
+                                return;
+                            }
+                            // Agregar a offEntries
+                            if (offEntries == null) {
+                                offEntries = new ArrayList<>();
+                            }
+                            offEntries.addAll(foundEntries);
+                            // Remove duplicates and sort
+                            Set<OffsetEntry> unique = new HashSet<>(offEntries);
+                            offEntries.clear();
+                            offEntries.addAll(unique);
+                            Collections.sort(offEntries);
+                            // Mostrar mensaje de éxito
+                            JOptionPane.showMessageDialog(dialog, 
+                                    rb.getString(KeyConstants.KEY_SEARCHED_ALL_DESC) + foundEntries.size() + " rangos marcados",
+                                    rb.getString(KeyConstants.KEY_SEARCHED_ALL_TITLE), JOptionPane.INFORMATION_MESSAGE);
+                            // Refresh the display
+                            refreshAll();
+                            dialog.dispose();
+                        } catch (NumberFormatException ex) {
+                            JOptionPane.showMessageDialog(dialog, rb.getString(KeyConstants.KEY_FIND_POINTERS_INVALID_FORMAT));
+                        }
+                }
+                });
+                cancelButton.addActionListener(ae -> dialog.dispose());
+
+                JPanel buttonPanel = new JPanel();
+                buttonPanel.add(okButton);
+                buttonPanel.add(cancelButton);
+
+                dialog.add(panel, BorderLayout.CENTER);
+                dialog.add(buttonPanel, BorderLayout.SOUTH);
+                dialog.pack();
+                applyIconsToWindow(dialog);
+                dialog.setResizable(Boolean.FALSE);
+                dialog.setLocationRelativeTo(HexViewer.this);
+                // Agregar tecla Escape para cerrar
+                dialog.getRootPane().registerKeyboardAction(
+                    evt -> dialog.dispose(),
+                    KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0),
+                    JComponent.WHEN_IN_FOCUSED_WINDOW
+                );
+                dialog.setVisible(true);
             }
         });
         openTable.setAction(new AbstractAction(rb.getString(KeyConstants.KEY_OPEN_TABLE_MENUITEM)) {
@@ -1868,7 +2239,7 @@ public class HexViewer extends JFrame implements ActionListener {
                 }
                 fileChooser.setCurrentDirectory(parent);
                 fileChooser.setFileFilter(tableFilter);
-                int result = fileChooser.showOpenDialog(openTable);
+                int result = fileChooser.showOpenDialog(HexViewer.this);
                 if (result == JFileChooser.APPROVE_OPTION) {
                     reloadTableFile(fileChooser.getSelectedFile());
                 }
@@ -1880,7 +2251,14 @@ public class HexViewer extends JFrame implements ActionListener {
             @Override
             public void actionPerformed(ActionEvent e) {
                 JFileChooser fileChooser = new JFileChooser();
-                fileChooser.setSelectedFile(tableFile);
+                // Mostrar nombre sin extensión .tbl en el diálogo
+                File displayFile = tableFile;
+                String tableName = tableFile.getName();
+                if (tableName.endsWith(EXTENSION_TABLE)) {
+                    tableName = tableName.substring(0, tableName.length() - EXTENSION_TABLE.length());
+                    displayFile = new File(tableFile.getParent(), tableName);
+                }
+                fileChooser.setSelectedFile(displayFile);
                 File parent = tableFile.getParentFile();
                 if(parent == null) {
                     parent = hexFile.getParentFile();
@@ -1891,14 +2269,15 @@ public class HexViewer extends JFrame implements ActionListener {
                 fileChooser.setCurrentDirectory(parent);
                 fileChooser.setApproveButtonText(rb.getString(KeyConstants.KEY_SAVE_BUTTON));
                 fileChooser.setFileFilter(tableFilter);
-                int result = fileChooser.showSaveDialog(saveTable);
+                int result = fileChooser.showSaveDialog(HexViewer.this);
                 if (result == JFileChooser.APPROVE_OPTION) {
-                    boolean accepted = confirmSelectedFile(fileChooser.getSelectedFile());
+                    File selectedFile = fileChooser.getSelectedFile();
+                    if(!selectedFile.getAbsolutePath().endsWith(EXTENSION_TABLE)) {
+                        selectedFile = new File(selectedFile.getAbsolutePath() + EXTENSION_TABLE);
+                    }
+                    boolean accepted = confirmSelectedFile(selectedFile);
                     if(accepted) {
-                        tableFile = fileChooser.getSelectedFile();
-                        if(!tableFile.getAbsolutePath().endsWith(EXTENSION_TABLE)) {
-                            tableFile = new File(tableFile.getAbsolutePath() + EXTENSION_TABLE);
-                        }
+                        tableFile = selectedFile;
                         try {
                             FileUtils.writeFileAscii(tableFile.getAbsolutePath(), hexTable.toAsciiTable());
                         } catch (Exception e1) {
@@ -1930,7 +2309,7 @@ public class HexViewer extends JFrame implements ActionListener {
         // Los botones ya existen desde createNewPrjWin(), solo añadir listeners
         newPrjWinSearchFileButton.addActionListener(e -> {
             JFileChooser fileChooser = new JFileChooser(Utils.getJarDirectory());
-            int result = fileChooser.showOpenDialog(openFile);
+            int result = fileChooser.showOpenDialog(this);
             if (result == JFileChooser.APPROVE_OPTION) {
                 File file = fileChooser.getSelectedFile();
                 newPrjWinFileInput.setText(file.getName());
@@ -1958,8 +2337,8 @@ public class HexViewer extends JFrame implements ActionListener {
                     @SuppressWarnings("unchecked")
                     java.util.Map.Entry<String, String> sel = (java.util.Map.Entry<String, String>) newPrjWinFileTypeOpt.getSelectedItem();
                     String selectedType = sel != null ? sel.getValue() : null;
-                    // Usar createProject(file, selectedType) para manejar colisiones y respetar la selección
-                    ProjectUtils.createProject(projectFile, selectedType);
+                    // Usar createProject(file, selectedType, createRetroFiles) para manejar colisiones y respetar la selección
+                    ProjectUtils.createProject(projectFile, selectedType, newPrjWinRetroFilesCheckBox.isSelected());
                     newPrjWin.setVisible(false);
                     int choice = JOptionPane.showConfirmDialog(newPrjWin,
                             rb.getString(KeyConstants.KEY_NEW_PRJ_GENERATING_MSG),
@@ -2044,6 +2423,8 @@ public class HexViewer extends JFrame implements ActionListener {
                 searchAll.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_A, menuShortcut));
                 extract.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_E, menuShortcut));
                 find.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_F, menuShortcut));
+                findHex.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_Y, menuShortcut));
+                findPointers.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_W, menuShortcut));
                 goTo.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_G, menuShortcut));
                 openTable.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_T, menuShortcut));
                 saveTable.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_S, menuShortcut));
@@ -2110,18 +2491,16 @@ public class HexViewer extends JFrame implements ActionListener {
         
         searchAllThread = new Thread(() -> {
             try {
-                File file = new File(Constants.DEFAULT_DICT);
-                if(!file.exists()) {
-                    file = new File(Constants.PARENT_DIR + Constants.DEFAULT_DICT);
-                }
-                if(file.exists()) {
-                    // Get the entries string from getAllEntries
+                java.nio.file.Path dictPath = com.wave.hextractor.util.FileUtils.findInParents(java.nio.file.Paths.get(Constants.DEFAULT_DICT));
+                File file = (dictPath != null) ? dictPath.toFile() : null;
+                if (file != null && file.exists()) {
+                    // Get the entries string from getAllEntries without multibyte processing
                     String entries = hexTable.getAllEntries(fileBytes,
                             Constants.MIN_NUM_CHARS_WORD, 
                             searchAllWinSkipCharsOpt.getSelectedIndex(), 
                             Arrays.asList(searchAllWinEndCharsInput.getText().toUpperCase()
                                     .replace(Constants.SPACE_STR, Constants.EMPTY).split(Constants.OFFSET_CHAR_SEPARATOR)),
-                            file.getAbsolutePath());
+                            file.getAbsolutePath(), false);
                     
                     if (entries != null && entries.length() > 0) {
                         // Parse the entries and add them to the list
@@ -2193,8 +2572,8 @@ public class HexViewer extends JFrame implements ActionListener {
     private boolean confirmSelectedFile(File selectedFile) {
         boolean accepted = true;
         if (selectedFile != null && selectedFile.exists()) {
-            accepted = GuiUtils.confirmActionAlert(rb.getString(KeyConstants.KEY_CONFIRM_ACTION_TITLE),
-                    rb.getString(KeyConstants.KEY_CONFIRM_FILE_OVERWRITE_ACTION));
+            String message = MessageFormat.format(rb.getString(KeyConstants.KEY_CONFIRM_OVERWRITE), selectedFile.getName());
+            accepted = GuiUtils.confirmActionAlert(rb.getString(KeyConstants.KEY_CONFIRM_OVERWRITE_TITLE), message);
         }
         return accepted;
     }
@@ -2318,12 +2697,57 @@ public class HexViewer extends JFrame implements ActionListener {
      */
     private void reloadTableFile(File selectedFile) {
         tableFile = selectedFile;
+        if (tableFile == null) return;
         try {
-            hexTable = new HexTable(tableFile.getAbsolutePath());
+            // When a table is reloaded by dropping/inserting simultaneously, assume merge
+            // (avoid showing a dialog which is redundant in this flow).
+            HexTable newTable = new HexTable(tableFile.getAbsolutePath());
+            if (hexTable != null) {
+                hexTable.mergeFrom(newTable);
+            } else {
+                hexTable = newTable;
+            }
         } catch (Exception e1) {
             Utils.logException(e1);
         }
+        // Diagnostic logs: show a preview of the table and how it decodes the first view bytes
+        try {
+            if (hexTable != null && fileBytes != null) {
+                int previewLen = Math.min(getViewSize(), Math.max(0, fileBytes.length));
+                byte[] preview = Arrays.copyOf(fileBytes, previewLen);
+                Utils.log("[DIAG] table toAscii preview:\n" + hexTable.toAscii(preview, true));
+                Utils.log("[DIAG] table toAsciiTable size: " + (hexTable.toAsciiTable() != null ? hexTable.toAsciiTable().length() : 0));
+                // Additional diagnostics for problematic offsets reported by user
+                int[] interesting = {0x22E1, 0x24841};
+                for (int p : interesting) {
+                    if (p >= 0 && fileBytes != null && p < fileBytes.length) {
+                        HexTable.Match mm = hexTableMatchFromOffset(fileBytes, p, p + Math.max(1, getViewSize()));
+                        Utils.log("[DIAG] match at 0x" + Integer.toHexString(p).toUpperCase() + ": " + (mm == null ? "null" : ("len=" + mm.length + " val='" + mm.value + "'")));
+                    }
+                }
+            }
+        } catch (Exception e) {
+            Utils.logException(e);
+        }
+
         refreshAll();
+        // Force repaint/revalidate so UI reflects newly loaded table immediately
+        if (asciiTextArea != null) {
+            asciiTextArea.revalidate();
+            asciiTextArea.repaint();
+        }
+        if (hexTextArea != null) {
+            hexTextArea.revalidate();
+            hexTextArea.repaint();
+        }
+        if (offsetsTextArea != null) {
+            offsetsTextArea.revalidate();
+            offsetsTextArea.repaint();
+        }
+        if (hexViewerPanel != null) {
+            hexViewerPanel.revalidate();
+            hexViewerPanel.repaint();
+        }
     }
 
     /**
@@ -2349,6 +2773,27 @@ public class HexViewer extends JFrame implements ActionListener {
             Utils.logException(e1);
         }
         refreshAll();
+    }
+
+    /**
+     * Action to load ranges (.ext) from the UI.
+     */
+    private void loadOffsetsAction() {
+        File jarDir = Utils.getJarDirectory();
+        JFileChooser chooser = new JFileChooser(jarDir);
+        chooser.setFileFilter(extOnlyFileFilter);
+        chooser.setDialogTitle(rb.getString(KeyConstants.KEY_LOAD_OFFSETS_MENUITEM));
+        int res = chooser.showOpenDialog(this);
+        if (res == JFileChooser.APPROVE_OPTION) {
+            File selected = chooser.getSelectedFile();
+            if (selected != null && selected.exists()) {
+                reloadExtAsOffsetsFile(selected);
+                JOptionPane.showMessageDialog(this,
+                        rb.getString(KeyConstants.KEY_SEARCHED_ALL_DESC) + offEntries.size() + " rangos marcados",
+                        rb.getString(KeyConstants.KEY_SEARCHED_ALL_TITLE),
+                        JOptionPane.INFORMATION_MESSAGE);
+            }
+        }
     }
 
     /**
@@ -2600,6 +3045,8 @@ public class HexViewer extends JFrame implements ActionListener {
                 popup.show(e.getComponent(), e.getX(), e.getY());
             }
         });
+
+        // Tooltips for ASCII hover were removed (redundant and not useful for the user).
         
         // Foco al hacer click en hex
         hexTextArea.addMouseListener(new java.awt.event.MouseAdapter() {
@@ -2796,13 +3243,33 @@ public class HexViewer extends JFrame implements ActionListener {
             Utils.logException(ex);
         }
         
-        // Rueda ratón para scroll unificado
+        // Rueda ratón para scroll unificado (preservando fila/columna visual del caret)
         addMouseWheelListener(e -> {
+            int oldOffset = offset;
+            int localByte = 0;
+            if (asciiTextArea != null) {
+                try {
+                    localByte = mapAsciiDocPosToByteIndex(asciiTextArea.getCaretPosition());
+                } catch (Exception ex) {
+                    localByte = (caretByteIndex >= 0) ? Math.max(0, Math.min(getViewSize() - 1, caretByteIndex - oldOffset)) : 0;
+                }
+            } else {
+                localByte = (caretByteIndex >= 0) ? Math.max(0, Math.min(getViewSize() - 1, caretByteIndex - oldOffset)) : 0;
+            }
+
             int rotation = e.getWheelRotation();
             int delta = rotation * visibleColumns;
             offset = Math.max(0, Math.min(Math.max(0, fileBytes.length - getViewSize()), offset + delta));
             if (vsb != null) vsb.setValue(offset);
             updateThreeAreaContent();
+
+            int newLocal = Math.max(0, Math.min(getViewSize() - 1, localByte));
+            caretByteIndex = offset + newLocal;
+            int docPos = mapByteIndexToAsciiDocPos(caretByteIndex - offset);
+            if (asciiTextArea != null && docPos >= 0 && docPos <= asciiTextArea.getDocument().getLength()) {
+                asciiTextArea.setCaretPosition(docPos);
+                refreshSelection();
+            }
         });
         
     }
@@ -2820,16 +3287,60 @@ public class HexViewer extends JFrame implements ActionListener {
             int rowOffset = offset + r * bytesPerRow;
             if (rowOffset >= end) break;
             offsBuilder.append(String.format("%08X", rowOffset));
-            for (int c = 0; c < bytesPerRow; c++) {
+            int c = 0;
+            while (c < bytesPerRow) {
                 int idx = rowOffset + c;
                 if (idx >= end) {
-                    // pad remaining cells
                     asciiBuilder.append(' ');
                     hexBuilder.append("   ");
+                    c++;
+                    continue;
+                }
+                // Multi-byte aware: buscar el mapeo más largo posible
+                if (hexTable != null) {
+                    // Buscar el match más largo desde idx, pero no pasar el final de la fila ni del archivo
+                    int maxLen = Math.min(bytesPerRow - c, end - idx);
+                    HexTable.Match m = null;
+                    if (maxLen > 0) {
+                        // Limitar el match al final de la línea visual
+                        m = hexTableMatchFromOffset(fileBytes, idx, idx + maxLen);
+                    }
+                    if (m != null && m.length > 0) {
+                        // Mostrar espacios para los bytes previos y el carácter solo en el último byte del match
+                        for (int j = 0; j < m.length; j++) {
+                            if (j == 0) {
+                                // Render the mapping at the FIRST byte of the match (one visible char)
+                                asciiBuilder.append(getSingleDisplayChar(m.value));
+                            } else {
+                                asciiBuilder.append(' ');
+                            }
+                        }
+                        // Para cada byte del match, mostrar su hex
+                        for (int j = 0; j < m.length; j++) {
+                            int hexIdx = idx + j;
+                            if (hexIdx < end) {
+                                byte b = fileBytes[hexIdx];
+                                hexBuilder.append(String.format("%02X ", b));
+                            } else {
+                                hexBuilder.append("   ");
+                            }
+                        }
+                        c += m.length;
+                        continue;
+                    } else {
+                        // Si no hay match, mostrar como byte suelto
+                        byte b = fileBytes[idx];
+                        // hexTable.toString(...) can return multi-character strings; display a single char placeholder
+                        asciiBuilder.append(getSingleDisplayChar(hexTable.toString(b, false)));
+                        hexBuilder.append(String.format("%02X ", b));
+                        c++;
+                        continue;
+                    }
                 } else {
                     byte b = fileBytes[idx];
                     asciiBuilder.append((b >= 32 && b <= 126) ? (char) b : '.');
                     hexBuilder.append(String.format("%02X ", b));
+                    c++;
                 }
             }
             // newline for all but last displayed row
@@ -2859,6 +3370,57 @@ public class HexViewer extends JFrame implements ActionListener {
             asciiTextArea.setCaretPosition(0);
             refreshSelection();
         }
+
+    }
+
+    // Helper para buscar el match más largo posible desde un offset
+    private HexTable.Match hexTableMatchFromOffset(byte[] data, int pos, int end) {
+        if (hexTable == null) return null;
+        // El método findLongestMatch es privado, así que replicamos la lógica aquí
+        // pero usando la API pública: toAscii(byte[], expand, decodeUnknown) no sirve para un solo offset
+        // Así que accedemos por reflexión si es posible, si no, solo 1 byte
+        try {
+            java.lang.reflect.Method m = hexTable.getClass().getDeclaredMethod("findLongestMatch", byte[].class, int.class);
+            m.setAccessible(true);
+            Object result = m.invoke(hexTable, data, pos);
+            if (result instanceof HexTable.Match) {
+                HexTable.Match hm = (HexTable.Match) result;
+                int allowed = end - pos;
+                if (allowed <= 0) return null;
+                // If the reflected match is longer than the allowed length (end of visual row),
+                // return a truncated match that only consumes the allowed bytes but still
+                // displays the mapping at the first byte. This preserves alignment while
+                // showing the mapped character at the start of the row.
+                if (hm.length > allowed) {
+                    return new HexTable.Match(allowed, hm.value);
+                }
+                return hm;
+            }
+        } catch (Exception e) {
+            // fallback: 1 byte
+        }
+        // fallback: 1 byte
+        String val = hexTable.toString(data[pos], false);
+        return new HexTable.Match(1, val);
+    }
+
+    /** Return a single-character string representing the first Unicode codepoint of s. */
+    private String getFirstCodePoint(String s) {
+        if (s == null || s.isEmpty()) return " ";
+        int cp = s.codePointAt(0);
+        return new String(Character.toChars(cp));
+    }
+
+    /** Return a single Java char to represent the first visible codepoint of s.
+     *  If the codepoint requires a surrogate pair, return '?' to keep alignment.
+     */
+    private char getSingleDisplayChar(String s) {
+        if (s == null || s.isEmpty()) return ' ';
+        int cp = s.codePointAt(0);
+        if (cp <= 0xFFFF) {
+            return (char) cp;
+        }
+        return '?';
     }
 
     // Map ASCII document position (including newlines) to byte index within current view

@@ -110,6 +110,23 @@ public class FileUtilsTest {
 	}
 
 	@Test
+	public void getAsciiFileFindsInParents() throws IOException {
+		java.nio.file.Path base = java.nio.file.Files.createTempDirectory("getAsciiFileParents");
+		java.nio.file.Path dictDir = base.resolve(".Hextractor");
+		java.nio.file.Files.createDirectory(dictDir);
+		java.nio.file.Path dictFile = dictDir.resolve("EngDict.txt");
+		FileUtils.writeFileAscii(dictFile.toString(), "parentcontent");
+		java.nio.file.Path sub = java.nio.file.Files.createDirectory(base.resolve("TEKKEN3.BNS"));
+		String origUserDir = System.getProperty("user.dir");
+		try {
+			System.setProperty("user.dir", sub.toAbsolutePath().toString());
+			assertEquals("parentcontent", FileUtils.getAsciiFile(Constants.DEFAULT_DICT));
+		} finally {
+			System.setProperty("user.dir", origUserDir);
+		}
+	}
+
+	@Test
 	public void extractAscii3To4Data() throws IOException {
 		byte[] data = {40,41,42,43,44,45};
 		File dataFile = File.createTempFile("data", "extractAscii3To4Data.tst");
@@ -215,6 +232,26 @@ public class FileUtilsTest {
 
 	@Test
 	public void extractAsciiFile1() {
+	}
+
+	@Test
+	public void findInParents() throws IOException {
+		java.nio.file.Path base = java.nio.file.Files.createTempDirectory("findInParentsBase");
+		java.nio.file.Path dictDir = base.resolve(".Hextractor");
+		java.nio.file.Files.createDirectory(dictDir);
+		java.nio.file.Path dictFile = dictDir.resolve("EngDict.txt");
+		FileUtils.writeFileAscii(dictFile.toString(), "testcontent");
+		java.nio.file.Path sub1 = java.nio.file.Files.createDirectory(base.resolve("TEKKEN3.BNS"));
+		java.nio.file.Path sub2 = java.nio.file.Files.createDirectory(sub1.resolve("SCES_012.37"));
+		String origUserDir = System.getProperty("user.dir");
+		try {
+			System.setProperty("user.dir", sub2.toAbsolutePath().toString());
+			java.nio.file.Path found = FileUtils.findInParents(java.nio.file.Paths.get(Constants.DEFAULT_DICT));
+			assertNotNull(found);
+			assertEquals(dictFile.toAbsolutePath().toString(), found.toAbsolutePath().toString());
+		} finally {
+			System.setProperty("user.dir", origUserDir);
+		}
 	}
 
 	@Test

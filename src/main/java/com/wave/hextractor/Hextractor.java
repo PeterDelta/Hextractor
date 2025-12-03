@@ -180,13 +180,21 @@ public class Hextractor {
 			Utils.log(rb.getString(KeyConstants.KEY_CONSOLE_HEADER));
 		}
 		if (args.length > 0) {
+			// Check for --retro flag
+			boolean createRetroFiles = false;
+			String[] fileArgs = args;
+			if (args.length > 1 && "--retro".equals(args[0])) {
+				createRetroFiles = true;
+				fileArgs = new String[args.length - 1];
+				System.arraycopy(args, 1, fileArgs, 0, fileArgs.length);
+			}
 			// Restore legacy behavior: if all args are files, create projects for each
-			if (FileUtils.allFilesExist(args)) {
-				for (String file : args) {
+			if (FileUtils.allFilesExist(fileArgs)) {
+				for (String file : fileArgs) {
 					try {
 						String projectName = ProjectUtils.getProjectName(new File(file).getName());
 						Utils.log(Utils.getMessage("consoleGeneratingProjects", projectName));
-						ProjectUtils.createProject(file);
+						ProjectUtils.createProject(new File(file), null, createRetroFiles);
 						Utils.log("------------------");
 					} catch (Exception e) {
 						Utils.logException(e);

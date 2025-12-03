@@ -28,7 +28,7 @@ public class ProjectUtils {
 	private static final String PAUSE = "pause";
 
 	/** The Constant PROG_CALL. */
-	private static final String PROG_CALL = "java -jar Hextractor.jar ";
+	private static final String PROG_CALL = "java -jar \".Hextractor.jar\" ";
 
 	/** The Constant INSERT_FILE. */
 	private static final String INSERT_FILE = "1.InsertAll.bat";
@@ -38,6 +38,15 @@ public class ProjectUtils {
 
 	/** The Constant CREATEPATCH_FILE. */
 	private static final String CREATEPATCH_FILE = "3.CreatePatch.bat";
+
+	/** The Constant ORIGINALSCRIPT_FILE. */
+	private static final String ORIGINALSCRIPT_FILE = "4.extractScript.bat";
+
+	/** The Constant EXTRACTHEX_FILE. */
+	private static final String EXTRACTHEX_FILE = "5.extractHex.bat";
+
+	/** The Constant HEX_EXTENSION. */
+	private static final String HEX_EXTENSION = ".hex";
 
 	/** The Constant TR_FILENAME_PREFIX. */
 	private static final String TR_FILENAME_PREFIX = "TR_";
@@ -55,7 +64,7 @@ public class ProjectUtils {
 	private static final String SFILENAMENAME_VAR = "%S_FILENAME%";
 
 	/** The Constant FILE_HEXTRACTOR. */
-	private static final String FILE_HEXTRACTOR = "Hextractor.jar";
+	private static final String FILE_HEXTRACTOR = ".Hextractor.jar";
 
 	/** The Constant FILE_README. */
 	private static final String FILE_README = "_readme.txt";
@@ -66,7 +75,7 @@ public class ProjectUtils {
 	 * @return the batch header
 	 */
 	private static String createBatchHeader() {
-		return ECHO_OFF + Constants.NEWLINE;
+		return ECHO_OFF + Constants.NEWLINE + "setlocal EnableDelayedExpansion" + Constants.NEWLINE;
 	}
 
 	/**
@@ -85,7 +94,7 @@ public class ProjectUtils {
 	 * @return the tfile name
 	 */
 	private static String getTfileName(String name) {
-		return "set T_FILENAME=\"" + name + "\"";
+		return "set \"T_FILENAME=" + name + "\"";
 	}
 
 	/**
@@ -95,7 +104,7 @@ public class ProjectUtils {
 	 * @return the sfile name
 	 */
 	private static String getSfileName(String name) {
-		return "set S_FILENAME=\"" + name + "\"";
+		return "set \"S_FILENAME=" + name + "\"";
 	}
 
 	/**
@@ -105,7 +114,7 @@ public class ProjectUtils {
 	 * @return the script name
 	 */
 	private static String getScriptName(String name) {
-		return "set SCRIPTNAME=\"" + name + "\"";
+		return "set \"SCRIPTNAME=" + name + "\"";
 	}
 
 	/**
@@ -124,18 +133,31 @@ public class ProjectUtils {
 	 * @param fileName the file name
 	 * @param fileType the file type
 	 * @param projectFile the project file
+	 * @param createRetroFiles whether to create retrocompatible files (.hex, .extractScript.bat, .extractHex.bat)
 	 * @throws IOException the exception
 	 */
-	public static void createNewProject(String name, String fileName, String fileType, File projectFile) throws IOException {
+	public static void createNewProject(String name, String fileName, String fileType, File projectFile, boolean createRetroFiles) throws IOException {
 		File projectFolder = createProjectFolder(name);
 		String transfileName = TR_FILENAME_PREFIX + fileName;
 		// autoFixChecksum es true si el tipo de archivo NO es "Otros" (FILE_TYPE_OTHER)
 		boolean autoFixChecksum = !Constants.FILE_TYPE_OTHER.equals(fileType);
 		copyBaseFiles(projectFolder, name, projectFile);
-		Utils.log(Utils.getMessage("consoleGeneratingFiles"));
+		// Mensaje general (omitted): 'consoleGeneratingFiles' is redundant for project creation
+		// Mensajes detallados por archivo
+		Utils.log(Utils.getMessage("consoleGeneratingFile", INSERT_FILE));
 		Utils.createFile(Utils.getJoinedFileName(projectFolder, INSERT_FILE), createInsertFile(name, fileName, fileType, transfileName, autoFixChecksum));
+		Utils.log(Utils.getMessage("consoleGeneratingFile", COMPARE_ROMS_FILE));
 		Utils.createFile(Utils.getJoinedFileName(projectFolder, COMPARE_ROMS_FILE), createCompareRomsFile(name, fileName, transfileName));
+		Utils.log(Utils.getMessage("consoleGeneratingFile", CREATEPATCH_FILE));
 		Utils.createFile(Utils.getJoinedFileName(projectFolder, CREATEPATCH_FILE), createCreatePatchFile(name, fileName, transfileName));
+		if (createRetroFiles) {
+			Utils.log(Utils.getMessage("consoleGeneratingFile", name + HEX_EXTENSION));
+			Utils.createFile(Utils.getJoinedFileName(projectFolder, name + HEX_EXTENSION), createHexFile(name));
+			Utils.log(Utils.getMessage("consoleGeneratingFile", ORIGINALSCRIPT_FILE));
+			Utils.createFile(Utils.getJoinedFileName(projectFolder, ORIGINALSCRIPT_FILE), createOriginalScriptFile(name, fileName));
+			Utils.log(Utils.getMessage("consoleGeneratingFile", EXTRACTHEX_FILE));
+			Utils.createFile(Utils.getJoinedFileName(projectFolder, EXTRACTHEX_FILE), createExtractHexFile(name, transfileName));
+		}
 	}
 
 	/**
@@ -166,10 +188,10 @@ public class ProjectUtils {
 				String folderRomExtension = null;
 				
 				if (files != null) {
-					// Buscar ROMs en la carpeta (ignorar TR_, Hextractor.jar, .bat, .txt)
+					// Buscar ROMs en la carpeta (ignorar TR_, .Hextractor.jar, .bat, .txt)
 					for (File f : files) {
 						if (f.isFile() && !f.getName().startsWith("TR_") && 
-						    !f.getName().equals("Hextractor.jar") &&
+							!f.getName().equals(".Hextractor.jar") &&
 						    !f.getName().endsWith(".bat") &&
 						    !f.getName().endsWith(".txt")) {
 							String ext = FileUtils.getFileExtension(f.getName());
@@ -203,7 +225,7 @@ public class ProjectUtils {
 		}
 		// Si no hay ninguna carpeta existente, usar el nombre base sin extensión (primera vez)
 		
-		ProjectUtils.createNewProject(finalName, file.getName(), getFileType(file), file);
+		ProjectUtils.createNewProject(finalName, file.getName(), getFileType(file), file, false);
 	}
 
 	/**
@@ -237,10 +259,10 @@ public class ProjectUtils {
 				String folderRomExtension = null;
 
 				if (files != null) {
-					// Buscar ROMs en la carpeta (ignorar TR_, Hextractor.jar, .bat, .txt)
+					// Buscar ROMs en la carpeta (ignorar TR_, .Hextractor.jar, .bat, .txt)
 					for (File f : files) {
 						if (f.isFile() && !f.getName().startsWith("TR_") &&
-							!f.getName().equals("Hextractor.jar") &&
+							!f.getName().equals(".Hextractor.jar") &&
 							!f.getName().endsWith(".bat") &&
 							!f.getName().endsWith(".txt")) {
 							String ext = FileUtils.getFileExtension(f.getName());
@@ -279,7 +301,85 @@ public class ProjectUtils {
 				? selectedFileType
 				: getFileType(file);
 
-		ProjectUtils.createNewProject(finalName, file.getName(), effectiveFileType, file);
+		ProjectUtils.createNewProject(finalName, file.getName(), effectiveFileType, file, false);
+	}
+
+	/**
+	 * Creates the project, honoring a user-selected file type when provided.
+	 * If {@code selectedFileType} is null, empty, or not provided, the file type
+	 * will be inferred from the file extension as usual.
+	 *
+	 * @param file the ROM file to base the project on
+	 * @param selectedFileType the file type selected by the user (e.g. Constants.FILE_TYPE_OTHER)
+	 * @param createRetroFiles whether to create retrocompatible files (.hex, .extractScript.bat, .extractHex.bat)
+	 * @throws IOException if an I/O error occurs
+	 */
+	public static void createProject(File file, String selectedFileType, boolean createRetroFiles) throws IOException {
+		String baseName = getProjectName(file.getName());
+		String newExtension = FileUtils.getFileExtension(file.getName());
+		String finalName = baseName;
+		
+		// Buscar todas las carpetas que empiecen con el nombre base
+		File currentDir = new File(".");
+		File[] allFolders = currentDir.listFiles(f -> 
+			f.isDirectory() && 
+			(f.getName().equals(baseName) || f.getName().startsWith(baseName + "."))
+		);
+		
+		boolean foundTargetFolder = false;
+		
+		if (allFolders != null && allFolders.length > 0) {
+			// Buscar carpetas con ROMs
+			for (File folder : allFolders) {
+				File[] files = folder.listFiles();
+				boolean hasRoms = false;
+				String folderRomExtension = null;
+				
+				if (files != null) {
+					// Buscar ROMs en la carpeta (ignorar TR_, .Hextractor.jar, .bat, .txt)
+					for (File f : files) {
+						if (f.isFile() && !f.getName().startsWith("TR_") && 
+							!f.getName().equals(".Hextractor.jar") &&
+						    !f.getName().endsWith(".bat") &&
+						    !f.getName().endsWith(".txt")) {
+							String ext = FileUtils.getFileExtension(f.getName());
+							if (ext != null && isRomExtension(ext)) {
+								hasRoms = true;
+								folderRomExtension = ext;
+								break;
+							}
+						}
+					}
+				}
+				
+				// Si la carpeta no tiene ROMs (está vacía o solo tiene archivos generados), usarla
+				if (!hasRoms) {
+					finalName = folder.getName();
+					foundTargetFolder = true;
+					break;
+				}
+				// Si tiene ROM con la misma extensión, sobrescribir ahí
+				else if (folderRomExtension != null && folderRomExtension.equalsIgnoreCase(newExtension)) {
+					finalName = folder.getName();
+					foundTargetFolder = true;
+					break;
+				}
+			}
+			
+			// Si todas las carpetas existentes tienen ROMs con extensiones diferentes, crear nueva con extensión
+			if (!foundTargetFolder && newExtension != null && !newExtension.isEmpty()) {
+				finalName = baseName + "." + newExtension;
+			}
+		}
+		// Si no hay ninguna carpeta existente, usar el nombre base sin extensión (primera vez)
+		
+		// Determinar el tipo de archivo a utilizar: el seleccionado por el usuario (si viene informado)
+		// o el detectado por extensión como comportamiento por defecto.
+		String effectiveFileType = (selectedFileType != null && !selectedFileType.isEmpty())
+				? selectedFileType
+				: getFileType(file);
+
+		ProjectUtils.createNewProject(finalName, file.getName(), effectiveFileType, file, createRetroFiles);
 	}
 	
 	/**
@@ -333,7 +433,6 @@ public class ProjectUtils {
 		StringBuilder b = new StringBuilder();
 		// Header
 		b.append(createBatchHeader());
-		b.append("setlocal enabledelayedexpansion").append(Constants.NEWLINE).append(Constants.NEWLINE);
 		// Title
 		b.append(PROG_CALL).append(Hextractor.MODE_PRINT_MESSAGE).append(" batCompareTitle").append(Constants.NEWLINE);
 		b.append("echo.").append(Constants.NEWLINE).append(Constants.NEWLINE);
@@ -414,7 +513,7 @@ public class ProjectUtils {
 		b.append("    echo.").append(Constants.NEWLINE);
 		b.append(")").append(Constants.NEWLINE).append(Constants.NEWLINE);
 		// Call CLI
-		b.append("java -cp \"Hextractor.jar\" com.wave.hextractor.util.DiffExtractorCli \"!ORIGINAL!\" \"!MODIFIED!\" \"!OUTPUT!\"").append(Constants.NEWLINE).append(Constants.NEWLINE);
+		b.append("java -cp \".Hextractor.jar\" com.wave.hextractor.util.DiffExtractorCli \"!ORIGINAL!\" \"!MODIFIED!\" \"!OUTPUT!\"").append(Constants.NEWLINE).append(Constants.NEWLINE);
 		// Error check
 		b.append("if !errorlevel! neq 0 (").append(Constants.NEWLINE);
 		b.append("    echo.").append(Constants.NEWLINE);
@@ -444,31 +543,51 @@ public class ProjectUtils {
 		fileContent.append(getTfileName(transfileName)).append(Constants.NEWLINE);
 		fileContent.append(getSfileName(fileName)).append(Constants.NEWLINE);
 		fileContent.append(getScriptName(name)).append(Constants.NEWLINE);
-		// Validación de archivos TR_*.ext
+		
+		// Validate TR_*.ext files exist
 		fileContent.append("if not exist TR_*.ext (").append(Constants.NEWLINE);
-		fileContent.append("    echo ").append(MessageFormat.format(Utils.getMessage("batErrorExtNotFound"), SCRIPTNAME_VAR)).append(Constants.NEWLINE);
+		fileContent.append("    echo ARCHIVO: TR_*.ext No encontrado. Deben empezar por \"TR_\"").append(Constants.NEWLINE);
 		fileContent.append("    pause").append(Constants.NEWLINE);
 		fileContent.append("    exit /b 1").append(Constants.NEWLINE);
 		fileContent.append(")").append(Constants.NEWLINE);
-		// Validación de archivo .tbl
-		fileContent.append("if not exist ").append(SCRIPTNAME_VAR).append(".tbl (").append(Constants.NEWLINE);
-		fileContent.append("    echo ").append(MessageFormat.format(Utils.getMessage("batErrorTblNotFound"), SCRIPTNAME_VAR)).append(Constants.NEWLINE);
-		fileContent.append("    pause").append(Constants.NEWLINE);
-		fileContent.append("    exit /b 1").append(Constants.NEWLINE);
-		fileContent.append(")").append(Constants.NEWLINE);
-		fileContent.append("del " + TFILENAMENAME_VAR).append(Constants.NEWLINE);
-		fileContent.append("copy " + SFILENAMENAME_VAR + " " + TFILENAMENAME_VAR).append(Constants.NEWLINE);
-		// Bucle for con separación entre archivos
+		
+		// Delete and copy files
+		fileContent.append("del \"!T_FILENAME!\" 2>nul").append(Constants.NEWLINE);
+		fileContent.append("copy \"!S_FILENAME!\" \"!T_FILENAME!\"").append(Constants.NEWLINE);
+		
+		// Process all TR_*.ext files
 		fileContent.append("for %%F in (TR_*.ext) do (").append(Constants.NEWLINE);
-		fileContent.append("    java -jar Hextractor.jar -h %SCRIPTNAME%.tbl \"%%F\" %T_FILENAME%").append(Constants.NEWLINE);
-		fileContent.append("    echo.").append(Constants.NEWLINE);
+		fileContent.append("    call :apply_ext \"%%F\" || exit /b 1").append(Constants.NEWLINE);
 		fileContent.append(")").append(Constants.NEWLINE);
+		
+		// Checksum fix if needed
 		String checksumMode = getChecksumMode(fileName, fileType);
 		if(autoFixChecksum && checksumMode.length() > 0) {
-			fileContent.append(PROG_CALL).append(checksumMode).append(" ").append(TFILENAMENAME_VAR).append(Constants.NEWLINE);
+			fileContent.append(PROG_CALL).append(checksumMode).append(" \"!T_FILENAME!\"").append(Constants.NEWLINE);
 			fileContent.append("echo.").append(Constants.NEWLINE);
 		}
+		
 		fileContent.append(createBatchFooter());
+		fileContent.append("goto :eof").append(Constants.NEWLINE).append(Constants.NEWLINE);
+
+		// Subroutine to apply each TR_*.ext with its matching table (per-suffix when available, otherwise base table)
+		fileContent.append(":apply_ext").append(Constants.NEWLINE);
+		fileContent.append("set \"INPUT_EXT=%~1\"").append(Constants.NEWLINE);
+		fileContent.append("for %%G in (\"%~1\") do set \"BASENAME=%%~nG\"").append(Constants.NEWLINE);
+		fileContent.append("if /i \"!BASENAME:~0,3!\"==\"TR_\" set \"BASENAME=!BASENAME:~3!\"").append(Constants.NEWLINE);
+		fileContent.append("set \"TABLE=!BASENAME!.tbl\"").append(Constants.NEWLINE);
+		fileContent.append("set \"DEFAULT_TABLE=!SCRIPTNAME!.tbl\"").append(Constants.NEWLINE);
+		fileContent.append("set \"TABLE_TO_USE=!DEFAULT_TABLE!\"").append(Constants.NEWLINE);
+		fileContent.append("if exist \"!TABLE!\" set \"TABLE_TO_USE=!TABLE!\"").append(Constants.NEWLINE);
+		fileContent.append("if not exist \"!TABLE_TO_USE!\" (").append(Constants.NEWLINE);
+		fileContent.append("    echo ARCHIVO: !TABLE_TO_USE! No encontrado").append(Constants.NEWLINE);
+		fileContent.append("    pause").append(Constants.NEWLINE);
+		fileContent.append("    exit /b 1").append(Constants.NEWLINE);
+		fileContent.append(")").append(Constants.NEWLINE);
+		fileContent.append(PROG_CALL).append("-h \"!TABLE_TO_USE!\" \"!INPUT_EXT!\" \"!T_FILENAME!\"").append(Constants.NEWLINE);
+		fileContent.append("if errorlevel 1 exit /b 1").append(Constants.NEWLINE);
+		fileContent.append("echo.").append(Constants.NEWLINE);
+		fileContent.append("exit /b 0").append(Constants.NEWLINE);
 		return fileContent.toString();
 	}
 
@@ -519,10 +638,52 @@ public class ProjectUtils {
 		fileContent.append(getTfileName(transFileName)).append(Constants.NEWLINE);
 		fileContent.append(getSfileName(fileName)).append(Constants.NEWLINE);
 		fileContent.append(getScriptName(name)).append(Constants.NEWLINE);
-		fileContent.append(PROG_CALL).append(Hextractor.CREATE_IPS_PATCH + " " + SFILENAMENAME_VAR + " " + TFILENAMENAME_VAR + " " + SCRIPTNAME_VAR +".ips").append(Constants.NEWLINE);
-		fileContent.append(PROG_CALL).append(Hextractor.MODE_FILL_READ_ME + " ../.Hextractor/_readme.txt " + SCRIPTNAME_VAR + "_readme.txt " + SFILENAMENAME_VAR).append(Constants.NEWLINE);
+		fileContent.append(PROG_CALL).append(Hextractor.CREATE_IPS_PATCH + " \"" + SFILENAMENAME_VAR + "\" \"" + TFILENAMENAME_VAR + "\" \"" + SCRIPTNAME_VAR + ".ips\"").append(Constants.NEWLINE);
+		// Usar .Hextractor/_readme.txt como fuente y <scriptname>_readme.txt como destino
+		fileContent.append(PROG_CALL)
+			.append(Hextractor.MODE_FILL_READ_ME)
+			.append(" \"../.Hextractor/_readme.txt\" \"")
+			.append(SCRIPTNAME_VAR)
+			.append("_readme.txt\" \"")
+			.append(SFILENAMENAME_VAR)
+			.append("\"")
+			.append(Constants.NEWLINE);
 		fileContent.append("echo.").append(Constants.NEWLINE);
 		fileContent.append(createBatchFooter());
+		return fileContent.toString();
+	}
+
+	/**
+	 * Creates the original script file.
+	 *
+	 * @param name the name
+	 * @param fileName the file name
+	 * @return the string
+	 */
+	private static String createOriginalScriptFile(String name, String fileName) {
+		StringBuilder fileContent = new StringBuilder();
+		fileContent.append(ECHO_OFF).append(Constants.NEWLINE);
+		fileContent.append(getTfileName(fileName)).append(Constants.NEWLINE);
+		fileContent.append(getScriptName(name)).append(Constants.NEWLINE);
+		fileContent.append(PROG_CALL).append("-a \""+ SCRIPTNAME_VAR +".tbl\" \""+ TFILENAMENAME_VAR +"\" \""+ SCRIPTNAME_VAR +".ext\" \""+ SCRIPTNAME_VAR +".off\"").append(Constants.NEWLINE);
+		fileContent.append(PAUSE).append(Constants.NEWLINE);
+		return fileContent.toString();
+	}
+
+	/**
+	 * Creates the extract hex file.
+	 *
+	 * @param name the file name
+	 * @param transfileName the transfile name
+	 * @return the string
+	 */
+	private static String createExtractHexFile(String name, String transfileName) {
+		StringBuilder fileContent = new StringBuilder();
+		fileContent.append(ECHO_OFF).append(Constants.NEWLINE);
+		fileContent.append(getTfileName(transfileName)).append(Constants.NEWLINE);
+		fileContent.append(getScriptName(name)).append(Constants.NEWLINE);
+		fileContent.append(PROG_CALL).append("-eh \""+ TFILENAMENAME_VAR +"\" \""+ SCRIPTNAME_VAR +".ext.hex\"").append(Constants.NEWLINE);
+		fileContent.append(PAUSE).append(Constants.NEWLINE);
 		return fileContent.toString();
 	}
 
@@ -532,6 +693,14 @@ public class ProjectUtils {
 	 * @param name the name
 	 * @return the string
 	 */
+	private static String createHexFile(String name) {
+		StringBuilder fileContent = new StringBuilder();
+		fileContent.append(";Traducciones Wave ").append(YEAR).append(Constants.NEWLINE);
+		fileContent.append(";54 72 61 64 75 63 63 69 6F 6E 65 73 20 57 61 76 65 20 3");
+		fileContent.append(YEAR, 0, 1).append(" 3").append(YEAR, 1, 2).append(" 3").append(YEAR, 2, 3).append(" 3").append(YEAR, 3, 4).append("@000000E0:000000F5").append(Constants.NEWLINE);
+		return fileContent.toString();
+	}
+
 	/**
 	 * Creates the extract hex file.
 	 *
