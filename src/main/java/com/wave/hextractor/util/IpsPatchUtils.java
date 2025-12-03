@@ -3,6 +3,7 @@ package com.wave.hextractor.util;
 import com.wave.hextractor.pojo.IpsPatchEntry;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -187,7 +188,7 @@ public class IpsPatchUtils {
 		}
 		byte[] fileBytes = new byte[patchFileSize];
 		// Copy header
-		System.arraycopy(Constants.IPS_HEADER.getBytes(), 0, fileBytes, 0, Constants.IPS_HEADER.length());
+		System.arraycopy(Constants.IPS_HEADER.getBytes(StandardCharsets.US_ASCII), 0, fileBytes, 0, Constants.IPS_HEADER.length());
 		int offset = Constants.IPS_HEADER.length();
 		for (IpsPatchEntry entry : patchEntries) {
 			byte[] binEntryData = entry.toBin();
@@ -195,7 +196,7 @@ public class IpsPatchUtils {
 			offset += binEntryData.length;
 		}
 		// Copy end of file
-		System.arraycopy(Constants.IPS_EOF.getBytes(), 0, fileBytes, offset, Constants.IPS_EOF.length());
+		System.arraycopy(Constants.IPS_EOF.getBytes(StandardCharsets.US_ASCII), 0, fileBytes, offset, Constants.IPS_EOF.length());
 		return fileBytes;
 	}
 

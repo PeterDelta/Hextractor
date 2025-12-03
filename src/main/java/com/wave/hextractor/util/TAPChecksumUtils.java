@@ -1,6 +1,7 @@
 package com.wave.hextractor.util;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -314,7 +315,7 @@ public class TAPChecksumUtils {
 		 * @return the file name
 		 */
 		private String getFileName() {
-			return new String(Arrays.copyOfRange(dataBlock, HEADER_FILE_NAME_OFF, HEADER_FILE_NAME_OFF + HEADER_FILE_NAME_LEN));
+			return new String(Arrays.copyOfRange(dataBlock, HEADER_FILE_NAME_OFF, HEADER_FILE_NAME_OFF + HEADER_FILE_NAME_LEN), StandardCharsets.ISO_8859_1);
 		}
 	}
 
